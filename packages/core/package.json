@@ -1,0 +1,21 @@
+{
+  "name": "@cosmoscope/core",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cosmoscope/api": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  },
+  "exports": {
+    "./copy": "./src/copy.ts",
+    "./contracts": "./src/contracts.ts",
+    "./entitlements": "./src/entitlements.ts",
+    "./products": "./src/products.ts",
+    "./screens": "./src/screens.ts"
+  }
+}

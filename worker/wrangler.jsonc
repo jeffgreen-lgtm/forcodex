@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cosmoscope-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "SUPABASE_URL": "https://yjfnorcmbqciysacgyar.supabase.co"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@cosmoscope/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts": "./src/contracts.ts",
+    "./products": "./src/products.ts",
+    "./prompts": "./src/prompts.ts"
+  }
+}

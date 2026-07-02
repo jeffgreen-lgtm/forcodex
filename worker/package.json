@@ -1,0 +1,20 @@
+{
+  "name": "@cosmoscope/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "smoke": "node scripts/smoke-test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cosmoscope/api": "workspace:*",
+    "@cosmoscope/core": "workspace:*",
+    "@cosmoscope/db": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "wrangler": "^4.23.0"
+  }
+}
