@@ -16,3 +16,4 @@ apps/mobile/dist/
 apps/mobile/build/
 apps/web/.next/
 apps/web/out/
+*.tsbuildinfo
