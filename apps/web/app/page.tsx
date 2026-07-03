@@ -1,7 +1,5 @@
 import { OUTPUT_RULES, PREMIUM_PRODUCTS } from "@cosmoscope/api";
 
-export const runtime = "edge";
-
 const subscriptionProducts = Object.values(PREMIUM_PRODUCTS).filter((product) => product.kind === "subscription");
 const unlockProducts = Object.values(PREMIUM_PRODUCTS).filter((product) => product.kind === "one_time_unlock");
 
