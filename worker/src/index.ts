@@ -846,17 +846,25 @@ function buildChartSnapshot(input: {
   unknownBirthTime: boolean;
 }) {
   const seed = `${input.birthDate ?? "unknown"}|${input.birthTime ?? "12:00"}|${input.birthPlace ?? "unknown"}|${input.timezone ?? "utc"}`;
-  const sun = pickFrom(seed, ["Radiant", "Steady", "Electric", "Introspective", "Magnetic"]);
-  const moon = pickFrom(`${seed}|moon`, ["private", "protective", "sensory", "composed", "immediate"]);
-  const rising = pickFrom(`${seed}|rising`, ["direct", "soft-spoken", "commanding", "curious", "measured"]);
-  const summary = `${input.displayName.split(" ")[0]} moves with a ${sun.toLowerCase()} center, a ${moon} inner rhythm, and a ${rising} first impression.`;
+  const sun = getApproximateSunSign(input.birthDate);
+  const moon = "ephemeris pending";
+  const rising = input.unknownBirthTime ? "requires birth time" : "ephemeris pending";
+  const fallbackTone = pickFrom(seed, ["deliberate", "steady", "direct", "private", "measured"]);
+  const summary = sun
+    ? `${input.displayName.split(" ")[0]}'s foundation chart currently resolves the Sun as ${sun}; Moon and Rising require the full planetary engine before we should label them.`
+    : `${input.displayName.split(" ")[0]}'s foundation chart is cached, but the birth date needs review before we assign a Sun sign.`;
 
   return {
     chart: {
       bigThree: {
         moon,
         rising,
-        sun
+        sun: sun ?? fallbackTone
+      },
+      accuracy: {
+        moon: "pending_ephemeris_engine",
+        rising: input.unknownBirthTime ? "unknown_birth_time" : "pending_ephemeris_engine",
+        sun: sun ? "approximate_tropical_date_range" : "pending_birth_date"
       },
       birth: {
         date: input.birthDate,
@@ -866,9 +874,39 @@ function buildChartSnapshot(input: {
         unknownBirthTime: input.unknownBirthTime
       }
     },
-    sourceVersion: "phase1-cached-foundation",
+    sourceVersion: "phase1-sun-sign-foundation",
     summary
   };
+}
+
+function getApproximateSunSign(birthDate: string | null) {
+  if (!birthDate) {
+    return null;
+  }
+
+  const [, , monthRaw, dayRaw] = birthDate.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? [];
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+
+  if (!Number.isInteger(month) || !Number.isInteger(day)) {
+    return null;
+  }
+
+  const marker = month * 100 + day;
+  if (marker >= 321 && marker <= 419) return "Aries";
+  if (marker >= 420 && marker <= 520) return "Taurus";
+  if (marker >= 521 && marker <= 620) return "Gemini";
+  if (marker >= 621 && marker <= 722) return "Cancer";
+  if (marker >= 723 && marker <= 822) return "Leo";
+  if (marker >= 823 && marker <= 922) return "Virgo";
+  if (marker >= 923 && marker <= 1022) return "Libra";
+  if (marker >= 1023 && marker <= 1121) return "Scorpio";
+  if (marker >= 1122 && marker <= 1221) return "Sagittarius";
+  if (marker >= 1222 || marker <= 119) return "Capricorn";
+  if (marker >= 120 && marker <= 218) return "Aquarius";
+  if (marker >= 219 && marker <= 320) return "Pisces";
+
+  return null;
 }
 
 function buildForecastCopy(input: { displayName: string; timeframe: ForecastTimeframe; hasChart: boolean }) {

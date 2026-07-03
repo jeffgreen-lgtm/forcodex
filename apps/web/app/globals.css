@@ -713,6 +713,140 @@ select {
   padding-top: 18px;
 }
 
+.live-shell {
+  margin: 0 auto;
+  max-width: 1180px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.live-auth {
+  align-items: start;
+  display: grid;
+  gap: 48px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 0.75fr);
+  min-height: calc(100vh - 136px);
+  padding-top: 52px;
+}
+
+.live-auth-copy {
+  max-width: 740px;
+}
+
+.live-note {
+  border-top: 1px solid var(--line);
+  color: var(--stone);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  margin-top: 28px;
+  padding-top: 16px;
+}
+
+.live-form {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.mode-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mode-row button {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--stone);
+  cursor: pointer;
+  min-height: 42px;
+}
+
+.mode-row button.is-active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.live-field {
+  margin-top: 0;
+}
+
+.live-field input {
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.live-field input:disabled {
+  opacity: 0.45;
+}
+
+.live-two-col {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.live-error {
+  color: var(--terracotta);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.live-member {
+  display: grid;
+  gap: 36px;
+  padding-top: 42px;
+}
+
+.live-member-head {
+  max-width: 760px;
+}
+
+.live-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.live-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+
+.live-panel-wide {
+  grid-column: 1 / -1;
+}
+
+.live-panel h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 4vw, 4rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+}
+
+.live-panel p {
+  color: var(--stone);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  max-width: 52rem;
+}
+
+.live-panel p strong {
+  color: var(--ink);
+}
+
 .button-on-dark {
   border-color: rgba(255, 255, 255, 0.5);
   color: #f7f3ec;
@@ -804,5 +938,25 @@ select {
   .demo-threshold {
     margin: -18px calc(50% - 50vw) 0;
     padding: 40px 16px 64px;
+  }
+
+  .live-shell {
+    padding: 18px 16px 64px;
+  }
+
+  .live-auth,
+  .live-grid,
+  .live-two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .live-auth {
+    gap: 28px;
+    min-height: auto;
+    padding-top: 28px;
+  }
+
+  .live-form {
+    padding: 18px;
   }
 }

@@ -88,6 +88,9 @@ export default function HomePage() {
             change what you do next.
           </p>
           <div className="action-row">
+            <a className="button-primary" href="/app">
+              Open live app
+            </a>
             <a className="button-primary" href="/demo">
               Enter demo experience
             </a>
