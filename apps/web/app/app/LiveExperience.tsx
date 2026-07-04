@@ -10,6 +10,8 @@ const API_BASE_URL =
 type Mode = "signup" | "login";
 type Phase = "auth" | "loading" | "member";
 type ForecastTimeframe = "daily" | "weekly" | "monthly" | "yearly";
+type SignupStep = "welcome" | "name" | "account" | "birthDate" | "birthTime" | "birthPlace" | "review";
+type Meridiem = "AM" | "PM";
 
 type AuthResponse = {
   accessToken?: string | null;
@@ -133,9 +135,8 @@ type CheckoutSessionResponse = {
 
 type ResolvedBirthLocation = Pick<GeocodeResult, "label" | "latitude" | "longitude" | "timezone">;
 
-const defaultBirthDate = "1990-10-24";
-const defaultBirthTime = "09:07";
 const SESSION_STORAGE_KEY = "cosmoscope-access-token";
+const signupSteps: SignupStep[] = ["welcome", "name", "account", "birthDate", "birthTime", "birthPlace", "review"];
 const forecastLabels: Record<ForecastTimeframe, string> = {
   daily: "Daily decoding",
   weekly: "Weekly breakdown",
@@ -405,9 +406,9 @@ function sanitizeUserFacingCopy(text: string | null | undefined, memberLabel: st
     .replace(/(^|\n\n)([a-z])/g, (_, boundary: string, char: string) => `${boundary}${char.toUpperCase()}`);
 }
 
-function requireResolvedBirthLocation(selectedLocation: GeocodeResult | null): ResolvedBirthLocation {
+function requireResolvedBirthLocation(selectedLocation: GeocodeResult | ResolvedBirthLocation | null): ResolvedBirthLocation {
   if (!selectedLocation) {
-    throw new Error("Choose a birth place from the search results so the chart uses the right coordinates.");
+    throw new Error("Choose the birthplace that matches you best.");
   }
 
   return {
@@ -418,38 +419,92 @@ function requireResolvedBirthLocation(selectedLocation: GeocodeResult | null): R
   };
 }
 
-function normalizeBirthDateForApi(rawBirthDate: string): string {
-  const value = rawBirthDate.trim();
+function normalizeBirthDateForApi(month: string, day: string, year: string): string {
+  const parsedMonth = parseWholeNumber(month);
+  const parsedDay = parseWholeNumber(day);
+  const parsedYear = parseWholeNumber(year);
 
-  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) {
-    return value;
+  if (!parsedMonth || !parsedDay || !parsedYear || year.trim().length !== 4) {
+    throw new Error("Enter a complete birth date.");
   }
 
-  const slashMatch = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashMatch) {
-    const [, month, day, year] = slashMatch;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  const date = new Date(parsedYear, parsedMonth - 1, parsedDay);
+  const isValidDate =
+    date.getFullYear() === parsedYear && date.getMonth() === parsedMonth - 1 && date.getDate() === parsedDay;
+
+  if (!isValidDate || date > new Date()) {
+    throw new Error("Enter a real birth date.");
   }
 
-  const dashMatch = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dashMatch) {
-    const [, month, day, year] = dashMatch;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  return `${String(parsedYear).padStart(4, "0")}-${String(parsedMonth).padStart(2, "0")}-${String(parsedDay).padStart(2, "0")}`;
+}
+
+function normalizeBirthTimeForApi(hour: string, minute: string, meridiem: Meridiem, unknown: boolean): string {
+  if (unknown) {
+    return "12:00";
   }
 
-  throw new Error("Enter birth date as MM/DD/YYYY or YYYY-MM-DD.");
+  const parsedHour = parseWholeNumber(hour);
+  const parsedMinute = parseWholeNumber(minute);
+
+  if (!parsedHour || parsedMinute === null || parsedHour < 1 || parsedHour > 12 || parsedMinute < 0 || parsedMinute > 59) {
+    throw new Error("Enter a complete birth time, or choose that you do not know it.");
+  }
+
+  const hour24 = meridiem === "AM" ? parsedHour % 12 : (parsedHour % 12) + 12;
+  return `${String(hour24).padStart(2, "0")}:${String(parsedMinute).padStart(2, "0")}`;
+}
+
+function formatBirthDateForDisplay(month: string, day: string, year: string) {
+  try {
+    const value = normalizeBirthDateForApi(month, day, year);
+    const [parsedYear, parsedMonth, parsedDay] = value.split("-").map(Number);
+    return new Date(parsedYear, parsedMonth - 1, parsedDay).toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+  } catch {
+    return "Birth date incomplete";
+  }
+}
+
+function formatBirthTimeForDisplay(hour: string, minute: string, meridiem: Meridiem, unknown: boolean) {
+  if (unknown) {
+    return "Exact birth time unknown";
+  }
+
+  try {
+    normalizeBirthTimeForApi(hour, minute, meridiem, false);
+    return `${String(parseWholeNumber(hour) ?? "").padStart(2, "0")}:${String(parseWholeNumber(minute) ?? 0).padStart(2, "0")} ${meridiem}`;
+  } catch {
+    return "Birth time incomplete";
+  }
+}
+
+function parseWholeNumber(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  return Number(trimmed);
 }
 
 export function LiveExperience() {
   const [mode, setMode] = useState<Mode>("signup");
+  const [signupStep, setSignupStep] = useState<SignupStep>("welcome");
   const [phase, setPhase] = useState<Phase>("auth");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [birthPlace, setBirthPlace] = useState("");
-  const [birthDate, setBirthDate] = useState(defaultBirthDate);
-  const [birthTime, setBirthTime] = useState(defaultBirthTime);
+  const [birthMonth, setBirthMonth] = useState("");
+  const [birthDay, setBirthDay] = useState("");
+  const [birthYear, setBirthYear] = useState("");
+  const [birthHour, setBirthHour] = useState("");
+  const [birthMinute, setBirthMinute] = useState("");
+  const [birthMeridiem, setBirthMeridiem] = useState<Meridiem>("AM");
   const [unknownBirthTime, setUnknownBirthTime] = useState(false);
   const [geocodeResults, setGeocodeResults] = useState<GeocodeResult[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<GeocodeResult | null>(null);
@@ -476,6 +531,7 @@ export function LiveExperience() {
     return memberLabel.split(/\s+/)[0] || "Member";
   }, [memberLabel]);
 
+  const signupStepIndex = signupSteps.indexOf(signupStep);
   useEffect(() => {
     if (typeof window === "undefined" || accessToken) {
       return;
@@ -506,6 +562,7 @@ export function LiveExperience() {
       setGeocodeResults([]);
       setSelectedLocation(null);
       setLocationStatus("idle");
+      setSignupStep("welcome");
     }
   }, [mode]);
 
@@ -550,11 +607,12 @@ export function LiveExperience() {
     if (query.length < 3) {
       setGeocodeResults([]);
       setLocationStatus("idle");
-      setError("Type at least 3 characters for the birth place, then search.");
+      setError("Enter a city or town first, like Marietta, Georgia.");
       return;
     }
 
     setError(null);
+    setToolStatus(null);
     setLocationStatus("searching");
 
     try {
@@ -570,11 +628,14 @@ export function LiveExperience() {
       if (payload.results.length === 1 && onlyResult) {
         setSelectedLocation(onlyResult);
         setBirthPlace(onlyResult.label);
+        setToolStatus("Birthplace found.");
+      } else if (payload.results.length > 1) {
+        setToolStatus("Choose the birthplace that matches you best.");
       }
     } catch {
       setGeocodeResults([]);
       setLocationStatus("idle");
-      setError("Location search failed. Try city and state, like Chicago, Illinois.");
+      setError("We could not find that place yet. Try city and state, like Marietta, Georgia.");
     }
   }
 
@@ -586,16 +647,21 @@ export function LiveExperience() {
     const query = birthPlace.trim();
 
     if (query.length < 3) {
-      throw new Error("Type at least 3 characters for the birth place, like Marietta, Georgia.");
+      throw new Error("Enter a city or town first, like Marietta, Georgia.");
     }
 
     setLocationStatus("searching");
-    setToolStatus("Resolving your birth place...");
+    setToolStatus("Finding your birthplace...");
 
-    const payload = await request<{ results: GeocodeResult[] }>(API_PATHS.geocode, {
-      body: JSON.stringify({ query }),
-      method: "POST"
-    });
+    let payload: { results: GeocodeResult[] };
+    try {
+      payload = await request<{ results: GeocodeResult[] }>(API_PATHS.geocode, {
+        body: JSON.stringify({ query }),
+        method: "POST"
+      });
+    } catch {
+      throw new Error("We could not find that place yet. Try city and state, like Marietta, Georgia.");
+    }
 
     setGeocodeResults(payload.results);
     setLocationStatus("ready");
@@ -603,7 +669,12 @@ export function LiveExperience() {
     const bestMatch = payload.results[0];
 
     if (!bestMatch) {
-      throw new Error("No location matches found. Try city and state, like Marietta, Georgia.");
+      throw new Error("No birthplace matches came back. Try adding the state or country.");
+    }
+
+    if (payload.results.length > 1) {
+      setToolStatus("Choose the birthplace that matches you best.");
+      throw new Error("Choose the birthplace that matches you best.");
     }
 
     setSelectedLocation(bestMatch);
@@ -611,6 +682,76 @@ export function LiveExperience() {
     setToolStatus(null);
 
     return requireResolvedBirthLocation(bestMatch);
+  }
+
+  function handleModeChange(nextMode: Mode) {
+    setMode(nextMode);
+    setError(null);
+    setToolStatus(null);
+  }
+
+  function moveSignupBack() {
+    setError(null);
+    setToolStatus(null);
+    const previousStep = signupSteps[Math.max(signupStepIndex - 1, 0)];
+    setSignupStep(previousStep);
+  }
+
+  async function handleSignupContinue() {
+    setError(null);
+    setToolStatus(null);
+
+    try {
+      if (signupStep === "welcome") {
+        setSignupStep("name");
+        return;
+      }
+
+      if (signupStep === "name") {
+        if (!displayName.trim()) {
+          setError("Enter the name you want CosmoScope to use.");
+          return;
+        }
+        setSignupStep("account");
+        return;
+      }
+
+      if (signupStep === "account") {
+        if (!email.trim() || !email.includes("@")) {
+          setError("Enter a working email address.");
+          return;
+        }
+        if (password.trim().length < 6) {
+          setError("Choose a password with at least 6 characters.");
+          return;
+        }
+        setSignupStep("birthDate");
+        return;
+      }
+
+      if (signupStep === "birthDate") {
+        normalizeBirthDateForApi(birthMonth, birthDay, birthYear);
+        setSignupStep("birthTime");
+        return;
+      }
+
+      if (signupStep === "birthTime") {
+        normalizeBirthTimeForApi(birthHour, birthMinute, birthMeridiem, unknownBirthTime);
+        setSignupStep("birthPlace");
+        return;
+      }
+
+      if (signupStep === "birthPlace") {
+        await resolveBirthLocationForSignup();
+        setSignupStep("review");
+        return;
+      }
+
+      await handleSubmit();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Check this step and try again.");
+      setToolStatus(null);
+    }
   }
 
   async function handleSubmit() {
@@ -622,17 +763,15 @@ export function LiveExperience() {
       return;
     }
 
-    if (mode === "signup" && !birthDate) {
-      setError("Birth date is required.");
-      return;
-    }
-
-    let normalizedBirthDate = birthDate;
+    let normalizedBirthDate = "";
+    let normalizedBirthTime = "";
 
     try {
-      normalizedBirthDate = mode === "signup" ? normalizeBirthDateForApi(birthDate) : birthDate;
+      normalizedBirthDate = mode === "signup" ? normalizeBirthDateForApi(birthMonth, birthDay, birthYear) : "";
+      normalizedBirthTime =
+        mode === "signup" ? normalizeBirthTimeForApi(birthHour, birthMinute, birthMeridiem, unknownBirthTime) : "";
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Enter a valid birth date.");
+      setError(caught instanceof Error ? caught.message : "Check the birth details and try again.");
       return;
     }
 
@@ -646,8 +785,8 @@ export function LiveExperience() {
             ? {
                 birthDate: normalizedBirthDate,
                 birthPlace: resolvedBirthLocation?.label,
-                birthTime: unknownBirthTime ? "12:00" : birthTime,
-                displayName: displayName.trim() || email.split("@")[0],
+                birthTime: normalizedBirthTime,
+                displayName: displayName.trim(),
                 email: email.trim(),
                 latitude: resolvedBirthLocation?.latitude,
                 longitude: resolvedBirthLocation?.longitude,
@@ -673,10 +812,16 @@ export function LiveExperience() {
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
       }
-      await hydrateMember(token, resolvedBirthLocation, normalizedBirthDate);
+      await hydrateMember(token, resolvedBirthLocation, normalizedBirthDate, normalizedBirthTime, unknownBirthTime);
       setPhase("member");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load CosmoScope.");
+      setError(
+        mode === "signup"
+          ? "We could not open your CosmoScope yet. Check the details and try again."
+          : caught instanceof Error
+            ? caught.message
+            : "Unable to log in."
+      );
       setPhase("auth");
     }
   }
@@ -684,7 +829,9 @@ export function LiveExperience() {
   async function hydrateMember(
     token: string,
     birthLocationOverride: ResolvedBirthLocation | null = null,
-    birthDateOverride = birthDate
+    birthDateOverride = "",
+    birthTimeOverride = "",
+    unknownBirthTimeOverride = unknownBirthTime
   ) {
     const chartLocation = birthLocationOverride ?? selectedLocation;
 
@@ -694,11 +841,12 @@ export function LiveExperience() {
           ? {
               birthDate: birthDateOverride,
               birthPlace: chartLocation.label,
-              birthTime: unknownBirthTime ? "12:00" : birthTime,
+              birthTime: birthTimeOverride,
               latitude: chartLocation.latitude,
               longitude: chartLocation.longitude,
               timezone: chartLocation.timezone,
-              timezoneOffset: null
+              timezoneOffset: null,
+              unknownBirthTime: unknownBirthTimeOverride
             }
           : {}
       ),
@@ -932,7 +1080,7 @@ export function LiveExperience() {
             className="live-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void handleSubmit();
+              void (mode === "signup" ? handleSignupContinue() : handleSubmit());
             }}
           >
             <div className="mode-row" role="tablist" aria-label="Account mode">
@@ -940,7 +1088,7 @@ export function LiveExperience() {
                 aria-selected={mode === "signup"}
                 className={mode === "signup" ? "is-active" : ""}
                 type="button"
-                onClick={() => setMode("signup")}
+                onClick={() => handleModeChange("signup")}
               >
                 Create account
               </button>
@@ -948,124 +1096,277 @@ export function LiveExperience() {
                 aria-selected={mode === "login"}
                 className={mode === "login" ? "is-active" : ""}
                 type="button"
-                onClick={() => setMode("login")}
+                onClick={() => handleModeChange("login")}
               >
                 Log in
               </button>
             </div>
 
             {mode === "signup" ? (
-              <label className="demo-field live-field">
-                <span>Name</span>
-                <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Jeff" />
-              </label>
-            ) : null}
-
-            <label className="demo-field live-field">
-              <span>Email</span>
-              <input
-                autoComplete="email"
-                inputMode="email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-              />
-            </label>
-
-            <label className="demo-field live-field">
-              <span>Password</span>
-              <input
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                minLength={6}
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Minimum 6 characters"
-              />
-            </label>
-
-            {mode === "signup" ? (
               <>
-                <label className="demo-field live-field">
-                  <span>Birth place</span>
-                  <input
-                    name="birthPlace"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={birthPlace}
-                    onChange={(event) => {
-                      setBirthPlace(event.currentTarget.value);
-                      setSelectedLocation(null);
-                      setGeocodeResults([]);
-                      setLocationStatus("idle");
-                    }}
-                    onInput={(event) => {
-                      const nextValue = event.currentTarget.value;
-                      setBirthPlace(nextValue);
-                      setSelectedLocation(null);
-                    }}
-                    placeholder="Chicago, Illinois"
-                  />
-                </label>
-
-                <button
-                  className="button-secondary live-location-search-button"
-                  type="button"
-                  onClick={() => void handleLocationSearch()}
-                >
-                  Search location
-                </button>
-
-                {locationStatus === "searching" ? <p className="live-subtle">Resolving place...</p> : null}
-                {locationStatus === "ready" && !geocodeResults.length ? (
-                  <p className="live-subtle">No location matches found. Try city and state.</p>
-                ) : null}
-                {geocodeResults.length ? (
-                  <div className="live-suggestion-list" aria-label="Birth place matches">
-                    {geocodeResults.map((result) => (
-                      <button
-                        key={result.id}
-                        className={selectedLocation?.id === result.id ? "is-selected" : ""}
-                        type="button"
-                        onClick={() => {
-                          setSelectedLocation(result);
-                          setBirthPlace(result.label);
-                        }}
-                      >
-                        {result.label}
-                      </button>
+                <div className="live-intake-progress" aria-label={`Step ${signupStepIndex + 1} of ${signupSteps.length}`}>
+                  <span>Step {signupStepIndex + 1} of {signupSteps.length}</span>
+                  <div>
+                    {signupSteps.map((step) => (
+                      <i key={step} className={signupSteps.indexOf(step) <= signupStepIndex ? "is-active" : ""} />
                     ))}
                   </div>
-                ) : null}
-                {selectedLocation ? <p className="live-subtle">Selected: {selectedLocation.label}</p> : null}
-
-                <div className="live-two-col">
-                  <label className="demo-field live-field">
-                    <span>Birth date</span>
-                    <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
-                  </label>
-                  <label className="demo-field live-field">
-                    <span>Birth time</span>
-                    <input
-                      disabled={unknownBirthTime}
-                      type="time"
-                      value={birthTime}
-                      onChange={(event) => setBirthTime(event.target.value)}
-                    />
-                  </label>
                 </div>
 
-                <label className="demo-toggle">
+                {signupStep === "welcome" ? (
+                  <section className="live-intake-step">
+                    <p className="reading-kicker">Private intake</p>
+                    <h2>Let&apos;s build your CosmoScope.</h2>
+                    <p>We&apos;ll ask for the essentials one step at a time, then open your private reading.</p>
+                  </section>
+                ) : null}
+
+                {signupStep === "name" ? (
+                  <section className="live-intake-step">
+                    <p className="reading-kicker">Name</p>
+                    <h2>What should the CosmoScope call you?</h2>
+                    <label className="demo-field live-field">
+                      <span>Display name</span>
+                      <input
+                        autoComplete="given-name"
+                        value={displayName}
+                        onChange={(event) => setDisplayName(event.target.value)}
+                        placeholder="Jeff"
+                      />
+                    </label>
+                  </section>
+                ) : null}
+
+                {signupStep === "account" ? (
+                  <section className="live-intake-step">
+                    <p className="reading-kicker">Account</p>
+                    <h2>Where should we save your reading?</h2>
+                    <label className="demo-field live-field">
+                      <span>Email</span>
+                      <input
+                        autoComplete="email"
+                        inputMode="email"
+                        type="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        placeholder="you@example.com"
+                      />
+                    </label>
+                    <label className="demo-field live-field">
+                      <span>Password</span>
+                      <input
+                        autoComplete="new-password"
+                        minLength={6}
+                        type="password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="Minimum 6 characters"
+                      />
+                    </label>
+                  </section>
+                ) : null}
+
+                {signupStep === "birthDate" ? (
+                  <section className="live-intake-step">
+                    <p className="reading-kicker">Birth date</p>
+                    <h2>What day did you arrive?</h2>
+                    <div className="live-three-col">
+                      <label className="demo-field live-field">
+                        <span>Month</span>
+                        <input
+                          inputMode="numeric"
+                          maxLength={2}
+                          value={birthMonth}
+                          onChange={(event) => setBirthMonth(event.target.value)}
+                          placeholder="11"
+                        />
+                      </label>
+                      <label className="demo-field live-field">
+                        <span>Day</span>
+                        <input
+                          inputMode="numeric"
+                          maxLength={2}
+                          value={birthDay}
+                          onChange={(event) => setBirthDay(event.target.value)}
+                          placeholder="30"
+                        />
+                      </label>
+                      <label className="demo-field live-field">
+                        <span>Year</span>
+                        <input
+                          inputMode="numeric"
+                          maxLength={4}
+                          value={birthYear}
+                          onChange={(event) => setBirthYear(event.target.value)}
+                          placeholder="1983"
+                        />
+                      </label>
+                    </div>
+                  </section>
+                ) : null}
+
+                {signupStep === "birthTime" ? (
+                  <section className="live-intake-step">
+                    <p className="reading-kicker">Birth time</p>
+                    <h2>What time should we use?</h2>
+                    <div className="live-three-col">
+                      <label className="demo-field live-field">
+                        <span>Hour</span>
+                        <input
+                          disabled={unknownBirthTime}
+                          inputMode="numeric"
+                          maxLength={2}
+                          value={birthHour}
+                          onChange={(event) => setBirthHour(event.target.value)}
+                          placeholder="9"
+                        />
+                      </label>
+                      <label className="demo-field live-field">
+                        <span>Minute</span>
+                        <input
+                          disabled={unknownBirthTime}
+                          inputMode="numeric"
+                          maxLength={2}
+                          value={birthMinute}
+                          onChange={(event) => setBirthMinute(event.target.value)}
+                          placeholder="07"
+                        />
+                      </label>
+                      <label className="demo-field live-field">
+                        <span>AM/PM</span>
+                        <select
+                          disabled={unknownBirthTime}
+                          value={birthMeridiem}
+                          onChange={(event) => setBirthMeridiem(event.target.value as Meridiem)}
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="demo-toggle live-intake-toggle">
+                      <input
+                        checked={unknownBirthTime}
+                        type="checkbox"
+                        onChange={(event) => setUnknownBirthTime(event.target.checked)}
+                      />
+                      I don&apos;t know my exact birth time.
+                    </label>
+                  </section>
+                ) : null}
+
+                {signupStep === "birthPlace" ? (
+                  <section className="live-intake-step">
+                    <p className="reading-kicker">Birth place</p>
+                    <h2>Where were you born?</h2>
+                    <label className="demo-field live-field">
+                      <span>City, state, or country</span>
+                      <input
+                        name="birthPlace"
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={birthPlace}
+                        onChange={(event) => {
+                          setBirthPlace(event.currentTarget.value);
+                          setSelectedLocation(null);
+                          setGeocodeResults([]);
+                          setLocationStatus("idle");
+                          setToolStatus(null);
+                        }}
+                        placeholder="Marietta, Georgia"
+                      />
+                    </label>
+                    <button
+                      className="button-secondary live-location-search-button"
+                      type="button"
+                      onClick={() => void handleLocationSearch()}
+                    >
+                      Find my birthplace
+                    </button>
+                    {locationStatus === "searching" ? <p className="live-subtle">Finding your birthplace...</p> : null}
+                    {locationStatus === "ready" && !geocodeResults.length ? (
+                      <p className="live-subtle">No match yet. Try adding the state or country.</p>
+                    ) : null}
+                    {geocodeResults.length ? (
+                      <div className="live-suggestion-list" aria-label="Birthplace matches">
+                        {geocodeResults.map((result) => (
+                          <button
+                            key={result.id}
+                            className={selectedLocation?.id === result.id ? "is-selected" : ""}
+                            type="button"
+                            onClick={() => {
+                              setSelectedLocation(result);
+                              setBirthPlace(result.label);
+                              setError(null);
+                              setToolStatus("Birthplace selected.");
+                            }}
+                          >
+                            <strong>{result.label}</strong>
+                            <span>Use this birthplace</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {selectedLocation ? <p className="live-subtle">Selected: {selectedLocation.label}</p> : null}
+                  </section>
+                ) : null}
+
+                {signupStep === "review" ? (
+                  <section className="live-intake-step">
+                    <p className="reading-kicker">Review</p>
+                    <h2>Ready to open your CosmoScope.</h2>
+                    <div className="live-review-list">
+                      <div>
+                        <span>Name</span>
+                        <strong>{displayName.trim()}</strong>
+                      </div>
+                      <div>
+                        <span>Email</span>
+                        <strong>{email.trim()}</strong>
+                      </div>
+                      <div>
+                        <span>Birth date</span>
+                        <strong>{formatBirthDateForDisplay(birthMonth, birthDay, birthYear)}</strong>
+                      </div>
+                      <div>
+                        <span>Birth time</span>
+                        <strong>{formatBirthTimeForDisplay(birthHour, birthMinute, birthMeridiem, unknownBirthTime)}</strong>
+                      </div>
+                      <div>
+                        <span>Birth place</span>
+                        <strong>{selectedLocation?.label ?? birthPlace.trim()}</strong>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <label className="demo-field live-field">
+                  <span>Email</span>
                   <input
-                    checked={unknownBirthTime}
-                    type="checkbox"
-                    onChange={(event) => setUnknownBirthTime(event.target.checked)}
+                    autoComplete="email"
+                    inputMode="email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
                   />
-                  I do not know my birth time
+                </label>
+
+                <label className="demo-field live-field">
+                  <span>Password</span>
+                  <input
+                    autoComplete="current-password"
+                    minLength={6}
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Minimum 6 characters"
+                  />
                 </label>
               </>
-            ) : null}
+            )}
 
             {error ? <p className="live-error">{error}</p> : null}
             {toolStatus ? <p className="live-subtle">{toolStatus}</p> : null}
@@ -1076,9 +1377,26 @@ export function LiveExperience() {
               </button>
             ) : null}
 
-            <button className="button-primary" type="submit">
-              {mode === "signup" ? "Create account and open chart" : "Log in and continue"}
-            </button>
+            {mode === "signup" ? (
+              <div className="live-intake-actions">
+                {signupStepIndex > 0 ? (
+                  <button className="button-secondary" type="button" onClick={moveSignupBack}>
+                    Back
+                  </button>
+                ) : null}
+                <button className="button-primary" type="submit">
+                  {signupStep === "welcome"
+                    ? "Begin my reading"
+                    : signupStep === "review"
+                      ? "Open my CosmoScope"
+                      : "Continue"}
+                </button>
+              </div>
+            ) : (
+              <button className="button-primary" type="submit">
+                Log in and continue
+              </button>
+            )}
           </form>
         </section>
       ) : null}

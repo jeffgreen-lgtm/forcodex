@@ -1655,6 +1655,181 @@ div {
 }
 
 .live-suggestion-list {
+  background: rgba(21, 17, 29, 0.98) !important;
+  border-color: rgba(240, 207, 131, 0.42) !important;
+  gap: 0.85rem !important;
+  padding: 0.85rem !important;
+}
+
+.live-suggestion-list button {
+  border-radius: 18px !important;
+  display: grid !important;
+  gap: 4px !important;
+  min-height: 68px !important;
+  padding: 1rem !important;
+}
+
+.live-form .button-primary {
+  background: linear-gradient(135deg, #f0cf83 0%, #d6a94f 55%, #b9812f 100%);
+  box-shadow: 0 14px 34px rgba(214, 169, 79, 0.26);
+  color: #17100a;
+  font-weight: 700;
+}
+
+.live-form .button-secondary {
+  border-color: rgba(240, 207, 131, 0.52);
+  color: #f4deb0;
+}
+
+.live-intake-progress {
+  display: grid;
+  gap: 10px;
+}
+
+.live-intake-progress > span {
+  color: rgba(244, 222, 176, 0.78);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.live-intake-progress > div {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.live-intake-progress i {
+  background: rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  display: block;
+  height: 5px;
+}
+
+.live-intake-progress i.is-active {
+  background: linear-gradient(90deg, #f0cf83, #d6a94f);
+}
+
+.live-intake-step {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.022)),
+    radial-gradient(circle at 92% 8%, rgba(240, 207, 131, 0.14), transparent 32%);
+  border: 1px solid rgba(240, 207, 131, 0.18);
+  border-radius: 22px;
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.live-intake-step h2 {
+  color: #f7f1e7;
+  font-size: clamp(2rem, 4vw, 3.35rem);
+  line-height: 0.98;
+  max-width: 11ch;
+}
+
+.live-intake-step p {
+  color: rgba(240, 236, 231, 0.74);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.live-three-col {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.live-intake-toggle {
+  margin-top: 2px;
+}
+
+.live-intake-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.live-intake-actions .button-primary {
+  min-width: 190px;
+}
+
+.live-review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.live-review-list div {
+  align-items: start;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(90px, 0.38fr) minmax(0, 1fr);
+  padding-top: 12px;
+}
+
+.live-review-list span {
+  color: rgba(240, 236, 231, 0.46);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.live-review-list strong {
+  color: #fff7dc;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.live-suggestion-list {
+  background: rgba(21, 17, 29, 0.98) !important;
+  border-color: rgba(240, 207, 131, 0.42) !important;
+  gap: 0.85rem !important;
+  padding: 0.85rem !important;
+}
+
+.live-suggestion-list button {
+  border-radius: 18px !important;
+  display: grid !important;
+  gap: 4px !important;
+  min-height: 68px !important;
+  padding: 1rem !important;
+}
+
+.live-suggestion-list button strong {
+  color: #fff7dc;
+  font-size: 0.98rem;
+}
+
+.live-suggestion-list button span {
+  color: rgba(240, 236, 231, 0.56);
+  font-size: 0.82rem;
+}
+
+.live-suggestion-list button.is-selected {
+  box-shadow: inset 0 0 0 1px rgba(240, 207, 131, 0.7);
+}
+
+@media (max-width: 680px) {
+  .live-three-col,
+  .live-review-list div {
+    grid-template-columns: 1fr;
+  }
+
+  .live-intake-actions {
+    justify-content: stretch;
+  }
+
+  .live-intake-actions .button-primary,
+  .live-intake-actions .button-secondary {
+    width: 100%;
+  }
+}
+
+.live-suggestion-list {
   position: static !important;
   display: grid !important;
   gap: 0.65rem !important;
