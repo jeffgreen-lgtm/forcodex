@@ -17,3 +17,4 @@ apps/mobile/build/
 apps/web/.next/
 apps/web/out/
 *.tsbuildinfo
+.local-secrets/
