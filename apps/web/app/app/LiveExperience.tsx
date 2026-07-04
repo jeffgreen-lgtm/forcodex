@@ -418,6 +418,29 @@ function requireResolvedBirthLocation(selectedLocation: GeocodeResult | null): R
   };
 }
 
+function normalizeBirthDateForApi(rawBirthDate: string): string {
+  const value = rawBirthDate.trim();
+
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return value;
+  }
+
+  const slashMatch = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, month, day, year] = slashMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const dashMatch = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashMatch) {
+    const [, month, day, year] = dashMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  throw new Error("Enter birth date as MM/DD/YYYY or YYYY-MM-DD.");
+}
+
 export function LiveExperience() {
   const [mode, setMode] = useState<Mode>("signup");
   const [phase, setPhase] = useState<Phase>("auth");
@@ -585,6 +608,7 @@ export function LiveExperience() {
 
     setSelectedLocation(bestMatch);
     setBirthPlace(bestMatch.label);
+    setToolStatus(null);
 
     return requireResolvedBirthLocation(bestMatch);
   }
@@ -603,6 +627,15 @@ export function LiveExperience() {
       return;
     }
 
+    let normalizedBirthDate = birthDate;
+
+    try {
+      normalizedBirthDate = mode === "signup" ? normalizeBirthDateForApi(birthDate) : birthDate;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Enter a valid birth date.");
+      return;
+    }
+
     setPhase("loading");
 
     try {
@@ -611,7 +644,7 @@ export function LiveExperience() {
         body: JSON.stringify(
           mode === "signup"
             ? {
-                birthDate,
+                birthDate: normalizedBirthDate,
                 birthPlace: resolvedBirthLocation?.label,
                 birthTime: unknownBirthTime ? "12:00" : birthTime,
                 displayName: displayName.trim() || email.split("@")[0],
@@ -640,7 +673,7 @@ export function LiveExperience() {
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
       }
-      await hydrateMember(token, resolvedBirthLocation);
+      await hydrateMember(token, resolvedBirthLocation, normalizedBirthDate);
       setPhase("member");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load CosmoScope.");
@@ -648,14 +681,18 @@ export function LiveExperience() {
     }
   }
 
-  async function hydrateMember(token: string, birthLocationOverride: ResolvedBirthLocation | null = null) {
+  async function hydrateMember(
+    token: string,
+    birthLocationOverride: ResolvedBirthLocation | null = null,
+    birthDateOverride = birthDate
+  ) {
     const chartLocation = birthLocationOverride ?? selectedLocation;
 
     const chartResponse = await request<ChartResponse>(API_PATHS.chart, {
       body: JSON.stringify(
         chartLocation
           ? {
-              birthDate,
+              birthDate: birthDateOverride,
               birthPlace: chartLocation.label,
               birthTime: unknownBirthTime ? "12:00" : birthTime,
               latitude: chartLocation.latitude,
