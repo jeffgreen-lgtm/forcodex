@@ -555,6 +555,40 @@ export function LiveExperience() {
     }
   }
 
+  async function resolveBirthLocationForSignup(): Promise<ResolvedBirthLocation> {
+    if (selectedLocation) {
+      return requireResolvedBirthLocation(selectedLocation);
+    }
+
+    const query = birthPlace.trim();
+
+    if (query.length < 3) {
+      throw new Error("Type at least 3 characters for the birth place, like Marietta, Georgia.");
+    }
+
+    setLocationStatus("searching");
+    setToolStatus("Resolving your birth place...");
+
+    const payload = await request<{ results: GeocodeResult[] }>(API_PATHS.geocode, {
+      body: JSON.stringify({ query }),
+      method: "POST"
+    });
+
+    setGeocodeResults(payload.results);
+    setLocationStatus("ready");
+
+    const bestMatch = payload.results[0];
+
+    if (!bestMatch) {
+      throw new Error("No location matches found. Try city and state, like Marietta, Georgia.");
+    }
+
+    setSelectedLocation(bestMatch);
+    setBirthPlace(bestMatch.label);
+
+    return requireResolvedBirthLocation(bestMatch);
+  }
+
   async function handleSubmit() {
     setError(null);
     setToolStatus(null);
@@ -572,7 +606,7 @@ export function LiveExperience() {
     setPhase("loading");
 
     try {
-      const resolvedBirthLocation = mode === "signup" ? requireResolvedBirthLocation(selectedLocation) : null;
+      const resolvedBirthLocation = mode === "signup" ? await resolveBirthLocationForSignup() : null;
       const auth = await request<AuthResponse>(mode === "signup" ? API_PATHS.signup : API_PATHS.login, {
         body: JSON.stringify(
           mode === "signup"
@@ -606,7 +640,7 @@ export function LiveExperience() {
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
       }
-      await hydrateMember(token);
+      await hydrateMember(token, resolvedBirthLocation);
       setPhase("member");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load CosmoScope.");
@@ -614,17 +648,19 @@ export function LiveExperience() {
     }
   }
 
-  async function hydrateMember(token: string) {
+  async function hydrateMember(token: string, birthLocationOverride: ResolvedBirthLocation | null = null) {
+    const chartLocation = birthLocationOverride ?? selectedLocation;
+
     const chartResponse = await request<ChartResponse>(API_PATHS.chart, {
       body: JSON.stringify(
-        selectedLocation
+        chartLocation
           ? {
               birthDate,
-              birthPlace: selectedLocation.label,
+              birthPlace: chartLocation.label,
               birthTime: unknownBirthTime ? "12:00" : birthTime,
-              latitude: selectedLocation.latitude,
-              longitude: selectedLocation.longitude,
-              timezone: selectedLocation.timezone,
+              latitude: chartLocation.latitude,
+              longitude: chartLocation.longitude,
+              timezone: chartLocation.timezone,
               timezoneOffset: null
             }
           : {}
