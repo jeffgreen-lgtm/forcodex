@@ -661,6 +661,16 @@ async function handleForecast(request: Request, env: Env) {
   assertSupabaseEnv(env);
   const auth = await authenticateRequest(request, env);
   const body = await readJson<ForecastRequest>(request);
+  const forecastBirthInput = body as ForecastRequest & {
+    birthDate?: string;
+    birthPlace?: string;
+    birthTime?: string;
+    latitude?: number;
+    longitude?: number;
+    timezone?: string;
+    timezoneOffset?: number | null;
+    unknownBirthTime?: boolean;
+  };
   const timeframe = body.timeframe;
 
   if (!["daily", "weekly", "monthly", "yearly"].includes(timeframe)) {
@@ -691,14 +701,14 @@ async function handleForecast(request: Request, env: Env) {
   const chart = await loadChart(env, auth.user.id);
   const displayName = profile?.display_name ?? auth.user.email ?? "Member";
   const astrologyInput = resolveAstrologyProfileInput({
-    birthDate: profile?.birth_date ?? null,
-    birthPlace: profile?.birth_place ?? null,
-    birthTime: profile?.birth_time ?? null,
-    latitude: profile?.latitude ?? null,
-    longitude: profile?.longitude ?? null,
-    timezone: profile?.timezone ?? null,
-    timezoneOffset: profile?.timezone_offset ?? null,
-    unknownBirthTime: profile?.unknown_birth_time ?? false
+    birthDate: forecastBirthInput.birthDate ?? profile?.birth_date ?? null,
+    birthPlace: forecastBirthInput.birthPlace ?? profile?.birth_place ?? null,
+    birthTime: forecastBirthInput.birthTime ?? profile?.birth_time ?? null,
+    latitude: forecastBirthInput.latitude ?? profile?.latitude ?? null,
+    longitude: forecastBirthInput.longitude ?? profile?.longitude ?? null,
+    timezone: forecastBirthInput.timezone ?? profile?.timezone ?? null,
+    timezoneOffset: forecastBirthInput.timezoneOffset ?? profile?.timezone_offset ?? null,
+    unknownBirthTime: forecastBirthInput.unknownBirthTime ?? profile?.unknown_birth_time ?? false
   });
   const normalizedChart = normalizeChartPayload(chart?.chart_json);
   const dominantTransit = await fetchDominantTransitSignal(
