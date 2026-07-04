@@ -854,8 +854,37 @@ export function LiveExperience() {
       method: "POST"
     });
 
+    const chartBirth = chartResponse.chart?.birth;
+    const chartBirthForForecast = chartBirth as
+      | (typeof chartBirth & { date?: string; birthDate?: string; time?: string; birthTime?: string })
+      | undefined;
+    const dailyForecastPayload =
+      chartLocation && birthDateOverride && birthTimeOverride
+        ? {
+            timeframe: "daily" as const,
+            birthDate: birthDateOverride,
+            birthPlace: chartLocation.label,
+            birthTime: birthTimeOverride,
+            latitude: chartLocation.latitude,
+            longitude: chartLocation.longitude,
+            timezone: chartLocation.timezone,
+            timezoneOffset: null,
+            unknownBirthTime: unknownBirthTimeOverride
+          }
+        : {
+            timeframe: "daily" as const,
+            birthDate: chartBirthForForecast?.date ?? chartBirthForForecast?.birthDate,
+            birthPlace: chartBirth?.place,
+            birthTime: chartBirthForForecast?.time ?? chartBirthForForecast?.birthTime,
+            latitude: chartBirth?.latitude,
+            longitude: chartBirth?.longitude,
+            timezone: chartBirth?.timezone,
+            timezoneOffset: null,
+            unknownBirthTime: chartBirth?.unknownBirthTime
+          };
+
     const dailyForecast = await request<ForecastResponse>(API_PATHS.forecast, {
-      body: JSON.stringify({ timeframe: "daily" }),
+      body: JSON.stringify(dailyForecastPayload),
       headers: authHeaders(token),
       method: "POST"
     });
@@ -936,11 +965,35 @@ export function LiveExperience() {
       return;
     }
 
+    const birthForForecast = chart?.chart?.birth;
+
+    if (!birthForForecast) {
+      setError("Open your chart first, then choose another reading.");
+      return;
+    }
+
+    const birthForForecastFields = birthForForecast as typeof birthForForecast & {
+      date?: string;
+      birthDate?: string;
+      time?: string;
+      birthTime?: string;
+    };
+
     setToolStatus(`Loading ${timeframe} reading...`);
     setError(null);
     try {
       const response = await request<ForecastResponse>(API_PATHS.forecast, {
-        body: JSON.stringify({ timeframe }),
+        body: JSON.stringify({
+          timeframe,
+          birthDate: birthForForecastFields.date ?? birthForForecastFields.birthDate,
+          birthPlace: birthForForecast.place,
+          birthTime: birthForForecastFields.time ?? birthForForecastFields.birthTime,
+          latitude: birthForForecast.latitude,
+          longitude: birthForForecast.longitude,
+          timezone: birthForForecast.timezone,
+          timezoneOffset: null,
+          unknownBirthTime: birthForForecast.unknownBirthTime
+        }),
         headers: authHeaders(accessToken),
         method: "POST"
       });
