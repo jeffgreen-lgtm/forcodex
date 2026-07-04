@@ -883,12 +883,6 @@ export function LiveExperience() {
             unknownBirthTime: chartBirth?.unknownBirthTime
           };
 
-    const dailyForecast = await request<ForecastResponse>(API_PATHS.forecast, {
-      body: JSON.stringify(dailyForecastPayload),
-      headers: authHeaders(token),
-      method: "POST"
-    });
-
     const entitlementsResponse = await request<EntitlementsResponse>(API_PATHS.entitlements, {
       headers: authHeaders(token),
       method: "GET"
@@ -896,7 +890,21 @@ export function LiveExperience() {
 
     setChart(chartResponse);
     setEntitlements(entitlementsResponse);
-    setForecasts({ daily: dailyForecast });
+    setForecasts({});
+
+    try {
+      const dailyForecast = await request<ForecastResponse>(API_PATHS.forecast, {
+        body: JSON.stringify(dailyForecastPayload),
+        headers: authHeaders(token),
+        method: "POST"
+      });
+
+      setForecasts({ daily: dailyForecast });
+      setActiveForecast("daily");
+    } catch (caught) {
+      console.warn("Daily forecast did not load during member hydration.", caught);
+      setToolStatus("Your chart is open. Daily timing can be loaded from the Daily tab.");
+    }
   }
 
   async function beginCheckout(productKey: keyof typeof PREMIUM_PRODUCTS) {
