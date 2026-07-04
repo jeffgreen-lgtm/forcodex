@@ -854,10 +854,39 @@ export function LiveExperience() {
       method: "POST"
     });
 
+    const entitlementsResponse = await request<EntitlementsResponse>(API_PATHS.entitlements, {
+      headers: authHeaders(token),
+      method: "GET"
+    });
+
+    setChart(chartResponse);
+    setEntitlements(entitlementsResponse);
+    setForecasts({});
+
     const chartBirth = chartResponse.chart?.birth;
-    const chartBirthForForecast = chartBirth as
-      | (typeof chartBirth & { date?: string; birthDate?: string; time?: string; birthTime?: string })
-      | undefined;
+    const chartBirthFields = chartBirth as Record<string, unknown> | undefined;
+
+    const storedBirthDate =
+      typeof chartBirthFields?.date === "string"
+        ? chartBirthFields.date
+        : typeof chartBirthFields?.birthDate === "string"
+          ? chartBirthFields.birthDate
+          : "";
+
+    const storedBirthTime =
+      typeof chartBirthFields?.time === "string"
+        ? chartBirthFields.time
+        : typeof chartBirthFields?.birthTime === "string"
+          ? chartBirthFields.birthTime
+          : "";
+
+    const storedBirthPlace = typeof chartBirthFields?.place === "string" ? chartBirthFields.place : "";
+    const storedLatitude = typeof chartBirthFields?.latitude === "number" ? chartBirthFields.latitude : null;
+    const storedLongitude = typeof chartBirthFields?.longitude === "number" ? chartBirthFields.longitude : null;
+    const storedTimezone = typeof chartBirthFields?.timezone === "string" ? chartBirthFields.timezone : "";
+    const storedUnknownBirthTime =
+      typeof chartBirthFields?.unknownBirthTime === "boolean" ? chartBirthFields.unknownBirthTime : false;
+
     const dailyForecastPayload =
       chartLocation && birthDateOverride && birthTimeOverride
         ? {
@@ -871,26 +900,24 @@ export function LiveExperience() {
             timezoneOffset: null,
             unknownBirthTime: unknownBirthTimeOverride
           }
-        : {
-            timeframe: "daily" as const,
-            birthDate: chartBirthForForecast?.date ?? chartBirthForForecast?.birthDate,
-            birthPlace: chartBirth?.place,
-            birthTime: chartBirthForForecast?.time ?? chartBirthForForecast?.birthTime,
-            latitude: chartBirth?.latitude,
-            longitude: chartBirth?.longitude,
-            timezone: chartBirth?.timezone,
-            timezoneOffset: null,
-            unknownBirthTime: chartBirth?.unknownBirthTime
-          };
+        : storedBirthDate && storedBirthTime && storedBirthPlace && storedLatitude !== null && storedLongitude !== null && storedTimezone
+          ? {
+              timeframe: "daily" as const,
+              birthDate: storedBirthDate,
+              birthPlace: storedBirthPlace,
+              birthTime: storedBirthTime,
+              latitude: storedLatitude,
+              longitude: storedLongitude,
+              timezone: storedTimezone,
+              timezoneOffset: null,
+              unknownBirthTime: storedUnknownBirthTime
+            }
+          : null;
 
-    const entitlementsResponse = await request<EntitlementsResponse>(API_PATHS.entitlements, {
-      headers: authHeaders(token),
-      method: "GET"
-    });
-
-    setChart(chartResponse);
-    setEntitlements(entitlementsResponse);
-    setForecasts({});
+    if (!dailyForecastPayload) {
+      setToolStatus("Your chart is open. The live daily reading needs one more refresh to load.");
+      return;
+    }
 
     try {
       const dailyForecast = await request<ForecastResponse>(API_PATHS.forecast, {
@@ -901,6 +928,7 @@ export function LiveExperience() {
 
       setForecasts({ daily: dailyForecast });
       setActiveForecast("daily");
+      setToolStatus(null);
     } catch (caught) {
       console.warn("Daily forecast did not load during member hydration.", caught);
       setToolStatus("Your chart is open. Daily timing can be loaded from the Daily tab.");
@@ -1553,7 +1581,7 @@ export function LiveExperience() {
                     <>
                       <p>
                         {dailyReading.primary ||
-                          "Today asks for stronger attention to timing, tone, and what is worth your actual energy. The emotional weather is not necessarily dramatic, but it is revealing. You will learn more by watching where friction keeps repeating than by trying to outpace it. What feels small on the surface may be the clearest signal of what needs adjusting. Stay close to what feels structurally true, not just emotionally loud."}
+                          "Your live daily decoding is still loading. This space should show the Reading Engine output once the forecast response returns."}
                       </p>
                       <p>{dailyReading.secondary}</p>
                     </>
