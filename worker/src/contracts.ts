@@ -3,6 +3,12 @@ import { API_PATHS } from "@cosmoscope/api/contracts";
 export const WORKER_ROUTE_MANIFEST = [
   { method: "POST", path: API_PATHS.login, purpose: "Authenticate existing members" },
   { method: "POST", path: API_PATHS.signup, purpose: "Create members and seed birth data" },
+  { method: "POST", path: API_PATHS.resetPassword, purpose: "Send password reset email for existing members" },
+  { method: "POST", path: API_PATHS.updatePassword, purpose: "Update password for a recovery or active session" },
+  { method: "POST", path: API_PATHS.geocode, purpose: "Resolve birthplace labels into coordinates and time zones" },
+  { method: "POST", path: API_PATHS.studioRead, purpose: "Generate internal creator studio readings and marketing copy" },
+  { method: "POST", path: API_PATHS.createCheckoutSession, purpose: "Create Stripe Checkout sessions for web purchases" },
+  { method: "POST", path: API_PATHS.confirmCheckoutSession, purpose: "Confirm Stripe Checkout results and apply entitlements" },
   { method: "POST", path: API_PATHS.deleteAccount, purpose: "Delete member account from inside the app" },
   { method: "POST", path: API_PATHS.chart, purpose: "Generate or sync verified natal chart data" },
   { method: "POST", path: API_PATHS.starscope, purpose: "Generate paid StarScope answers" },

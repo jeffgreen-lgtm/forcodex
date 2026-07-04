@@ -11,7 +11,8 @@
   "dependencies": {
     "@cosmoscope/api": "workspace:*",
     "@cosmoscope/core": "workspace:*",
-    "@cosmoscope/db": "workspace:*"
+    "@cosmoscope/db": "workspace:*",
+    "astronomy-engine": "^2.1.19"
   },
   "devDependencies": {
     "typescript": "~6.0.3",

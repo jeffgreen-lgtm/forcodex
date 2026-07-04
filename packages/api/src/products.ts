@@ -23,7 +23,7 @@ export const PREMIUM_PRODUCTS: Record<string, ProductDefinition> = {
     key: "lovescope_unlock",
     title: "LoveScope Unlock",
     kind: "one_time_unlock",
-    priceLabel: "$4.99",
+    priceLabel: "$2.99",
     iosProductId: "com.greenhenn.cosmoscope.lovescope_unlock",
     stripePriceLookupKey: "lovescope_unlock",
     revenueCatEntitlement: "unlock_lovescope"

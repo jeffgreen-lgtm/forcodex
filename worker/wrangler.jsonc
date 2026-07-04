@@ -9,6 +9,8 @@
   },
   "vars": {
     "APP_ENV": "production",
+    "APP_URL": "https://cosmo.greenhenncollective.com",
+    "PAYMENTS_DISABLED_PREVIEW": "false",
     "SUPABASE_URL": "https://yjfnorcmbqciysacgyar.supabase.co"
   }
 }
