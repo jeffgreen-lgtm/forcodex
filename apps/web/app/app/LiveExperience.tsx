@@ -257,7 +257,7 @@ function stripMoveLabel(text: string | null | undefined) {
     return "";
   }
 
-  return text.replace(/\*\*Your move:\*\*\s*/gi, "").trim();
+  return text.replace(/\n*\s*\*\*Your move:\*\*[\s\S]*$/i, "").trim();
 }
 
 function extractMoveText(text: string | null | undefined) {
@@ -1543,13 +1543,21 @@ export function LiveExperience() {
                 ) : null}
 
                 {!activeForecastLocked && activeForecast === "daily" ? (
-                  <>
-                    <p>
-                      {dailyReading.primary ||
-                        "Today asks for stronger attention to timing, tone, and what is worth your actual energy. The emotional weather is not necessarily dramatic, but it is revealing. You will learn more by watching where friction keeps repeating than by trying to outpace it. What feels small on the surface may be the clearest signal of what needs adjusting. Stay close to what feels structurally true, not just emotionally loud."}
-                    </p>
-                    <p>{dailyReading.secondary}</p>
-                  </>
+                  forecastParagraphs.length ? (
+                    <>
+                      {forecastParagraphs.map((paragraph, index) => (
+                        <p key={`daily-live-${index}`}>{renderMove(paragraph)}</p>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        {dailyReading.primary ||
+                          "Today asks for stronger attention to timing, tone, and what is worth your actual energy. The emotional weather is not necessarily dramatic, but it is revealing. You will learn more by watching where friction keeps repeating than by trying to outpace it. What feels small on the surface may be the clearest signal of what needs adjusting. Stay close to what feels structurally true, not just emotionally loud."}
+                      </p>
+                      <p>{dailyReading.secondary}</p>
+                    </>
+                  )
                 ) : null}
                 {!activeForecastLocked && activeForecast === "weekly" ? (
                   forecastParagraphs.length ? (

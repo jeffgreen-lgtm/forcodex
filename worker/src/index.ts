@@ -821,27 +821,49 @@ async function handleStudioRead(request: Request, env: Env) {
 }
 
 function shouldRegenerateForecast(content: string, timeframe: ForecastTimeframe) {
-  if (content.includes("@")) {
+  const trimmed = content.trim();
+
+  if (!trimmed) {
     return true;
   }
 
-  if (content.includes("reduces structural tension fastest")) {
+  const legacyForecastMarkers = [
+    "Today asks for steadier pacing",
+    "Today opens with",
+    "Today asks for stronger attention",
+    "The beginning of the week asks for more patience than pride",
+    "This month is about restructuring the way your life carries weight",
+    "This year is asking for a stronger container"
+  ];
+
+  if (legacyForecastMarkers.some((marker) => trimmed.includes(marker))) {
     return true;
   }
 
-  if (timeframe === "daily" && !content.includes("\n\n")) {
+  if (timeframe === "daily" && splitForecastParagraphs(trimmed).length < 3) {
     return true;
   }
 
-  if (timeframe === "weekly" && !content.includes("\n\n")) {
+  if (timeframe === "weekly" && splitForecastParagraphs(trimmed).length < 4) {
     return true;
   }
 
-  if (timeframe === "monthly" && !content.includes("\n\n")) {
+  if (timeframe === "monthly" && splitForecastParagraphs(trimmed).length < 5) {
+    return true;
+  }
+
+  if (timeframe === "yearly" && splitForecastParagraphs(trimmed).length < 5) {
     return true;
   }
 
   return false;
+}
+
+function splitForecastParagraphs(content: string) {
+  return content
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
 }
 
 async function handleStarScope(request: Request, env: Env) {
@@ -1466,33 +1488,162 @@ const ZODIAC_SIGNS = [
   "Pisces"
 ] as const;
 
-function buildForecastCopy(input: { chart: ChartPayload | null; displayName: string; timeframe: ForecastTimeframe; hasChart: boolean }) {
-  const signal = input.chart?.dominantTransit;
-  const sun = input.chart?.bigThree?.sun ?? "your core pattern";
-  const rising = input.chart?.bigThree?.rising ?? "your outer rhythm";
-  if (!input.hasChart) {
-    return `Finish your chart setup so the next reading can be more precise and more personal.\n\n**Your move:** add the exact birth record, then come back for the full read.`;
+type ReadingEngineSignTone = {
+  drive: string;
+  gift: string;
+  need: string;
+  shadow: string;
+  style: string;
+};
+
+const READING_ENGINE_SIGN_TONES: Record<string, ReadingEngineSignTone> = {
+  Aries: {
+    drive: "to act before the room has finished negotiating with itself",
+    gift: "clean initiative",
+    need: "directness, movement, and a clear place to put heat",
+    shadow: "turning urgency into proof",
+    style: "decisive presence"
+  },
+  Taurus: {
+    drive: "to make life more stable, tangible, and worth inhabiting",
+    gift: "endurance and practical taste",
+    need: "consistency, physical ease, and evidence that something is real",
+    shadow: "mistaking comfort for safety",
+    style: "grounded steadiness"
+  },
+  Gemini: {
+    drive: "to name the pattern, test the angle, and keep information moving",
+    gift: "mental agility",
+    need: "conversation, options, and enough room to change your mind honestly",
+    shadow: "staying in motion to avoid choosing",
+    style: "quick intelligence"
+  },
+  Cancer: {
+    drive: "to protect what matters and build from emotional truth",
+    gift: "devotion and memory",
+    need: "belonging, privacy, and proof that care is being returned",
+    shadow: "letting old weather make the present smaller",
+    style: "protective sensitivity"
+  },
+  Leo: {
+    drive: "to live from the part of you that refuses to be dimmed",
+    gift: "creative authority",
+    need: "warmth, recognition, and space to express the real self",
+    shadow: "confusing visibility with validation",
+    style: "expressive command"
+  },
+  Virgo: {
+    drive: "to improve the system until it can actually hold real life",
+    gift: "discernment",
+    need: "usefulness, order, and a way to turn concern into craft",
+    shadow: "using correction to manage anxiety",
+    style: "precise attention"
+  },
+  Libra: {
+    drive: "to create proportion, beauty, and terms people can actually live with",
+    gift: "relational intelligence",
+    need: "balance, reciprocity, and enough peace to hear yourself clearly",
+    shadow: "over-accommodating until the truth becomes expensive",
+    style: "social grace"
+  },
+  Scorpio: {
+    drive: "to get beneath the surface and stop pretending the obvious is enough",
+    gift: "emotional x-ray vision",
+    need: "trust, depth, and a place where intensity does not have to perform",
+    shadow: "holding power by withholding truth",
+    style: "magnetic privacy"
+  },
+  Sagittarius: {
+    drive: "to find the larger truth and move toward a life with more meaning",
+    gift: "vision and courage",
+    need: "freedom, honesty, and a horizon big enough to grow toward",
+    shadow: "using certainty to outrun complexity",
+    style: "restless candor"
+  },
+  Capricorn: {
+    drive: "to build something real enough to survive pressure",
+    gift: "strategy and responsibility",
+    need: "respect, structure, and proof that effort is becoming substance",
+    shadow: "treating softness like a liability",
+    style: "earned authority"
+  },
+  Aquarius: {
+    drive: "to see the system clearly and refuse the version that keeps people smaller",
+    gift: "future-minded clarity",
+    need: "space, perspective, and people who do not punish difference",
+    shadow: "detaching before the feeling has finished speaking",
+    style: "unusual perspective"
+  },
+  Pisces: {
+    drive: "to feel the hidden current and translate what others miss",
+    gift: "imagination and compassion",
+    need: "spaciousness, meaning, and protection from emotional overexposure",
+    shadow: "dissolving boundaries instead of choosing a form",
+    style: "porous intuition"
+  }
+};
+
+function readingEngineTone(sign: string | undefined): ReadingEngineSignTone {
+  if (sign && READING_ENGINE_SIGN_TONES[sign]) {
+    return READING_ENGINE_SIGN_TONES[sign];
   }
 
+  return {
+    drive: "to move toward what feels true",
+    gift: "pattern recognition",
+    need: "clarity, steadiness, and room to respond honestly",
+    shadow: "reacting before the deeper signal is clear",
+    style: "a distinctive presence"
+  };
+}
+
+function readingEngineTransitLine(signal: ChartPayload["dominantTransit"] | undefined) {
+  if (!signal) {
+    return "The current sky is not giving one dramatic headline; it is asking for cleaner pacing, cleaner choices, and a better relationship with what your body already knows.";
+  }
+
+  return `${signal.transitBody} in ${signal.transitSign} is pressing on your ${signal.natalBody}, so the day has a specific pressure point: the part of you that wants movement is negotiating with the part of you that needs a more honest container.`;
+}
+
+function readingEngineNames(input: { chart: ChartPayload | null; displayName: string }) {
+  const firstName = displayNameToFirstName(input.displayName);
+  const sun = input.chart?.bigThree?.sun ?? "your Sun";
+  const moon = input.chart?.bigThree?.moon ?? "your Moon";
+  const rising = input.chart?.bigThree?.rising ?? "your Rising";
+  return {
+    firstName,
+    moon,
+    moonTone: readingEngineTone(moon),
+    rising,
+    risingTone: readingEngineTone(rising),
+    sun,
+    sunTone: readingEngineTone(sun)
+  };
+}
+
+function buildForecastCopy(input: { chart: ChartPayload | null; displayName: string; timeframe: ForecastTimeframe; hasChart: boolean }) {
+  if (!input.hasChart) {
+    return `Your CosmoScope is open, but the chart record is not complete enough for a precise reading yet.\n\nAdd the exact birth date, time, and place so the system can calculate the pattern instead of giving you a generic interpretation.\n\n**Your move:** complete the birth record, then come back for the reading that is actually yours.`;
+  }
+
+  const signal = input.chart?.dominantTransit;
+  const { firstName, moon, moonTone, rising, risingTone, sun, sunTone } = readingEngineNames(input);
+  const transitLine = readingEngineTransitLine(signal);
+
   if (input.timeframe === "daily") {
-    const firstParagraph = signal
-      ? `Today opens with ${signal.transitBody} pressing on your ${signal.natalBody}, which makes timing more important than force. You may feel a stronger urge to react quickly, prove a point, or lock a decision before it has earned that level of certainty. The better use of this energy is to notice where tension keeps repeating, because that is usually where the real adjustment wants to happen. ${sun} themes are especially active now, so the issue is not only what you want, but the way you are carrying it through the day. If something feels louder than usual, treat that as a cue to slow down long enough to read what is actually being asked of you.`
-      : `Today asks for steadier pacing and better attention to what is actually asking for care. The emotional tone may shift quickly, but that does not mean you need to follow every change in atmosphere. ${sun} themes are running close to the surface, which makes your priorities feel more personal than usual. Let that sharpen your focus instead of scattering it. The strongest progress today will come from staying with what is true long enough to understand it.`;
-    const secondParagraph = `${rising} shapes the way this day lands in the outside world, so the way you enter conversations matters almost as much as what you say. If friction starts building, assume the timing needs work before assuming the whole direction is wrong. Give yourself enough room to respond with intention instead of reflex, because the tone you set early will shape the rest of the day more than one dramatic moment will.`;
-    const close = `**Your move:** choose the decision that lowers noise and increases clarity, then let that choice stand before adding another demand.`;
-    return `${firstParagraph}\n\n${secondParagraph}\n\n${close}`;
+    return `${firstName}, today’s signal is not simply “good” or “bad.” It is a pressure pattern. Your ${sun} Sun wants ${sunTone.drive}, but the day works better when that drive is given shape instead of speed. ${transitLine}\n\nYour ${moon} Moon is the body-level clue. It usually needs ${moonTone.need}, so if something feels louder than it should, treat that as information instead of an emergency. The emotional charge is not the instruction; it is the flare that shows you where the system wants care, limits, or a cleaner decision.\n\nYour ${rising} Rising is how the room meets you before you explain yourself. Let ${risingTone.style} lead without turning it into performance. The cleanest use of today is to make your signal easier to read: fewer defensive explanations, fewer rushed commitments, and more attention to the choice that would actually lower the noise.\n\n**Your move:** choose one place where your nervous system wants instant certainty, then slow it down until the next right action becomes obvious.`;
   }
 
   if (input.timeframe === "weekly") {
-    return `The beginning of the week asks for more patience than pride. If you rush to prove a point too early, you can spend energy that would be better used building real leverage.\n\nThe middle of the week becomes more revealing. ${signal ? `${signal.transitBody} raises the emotional volume and can make urgency feel more legitimate than it really is.` : "Patterns start to show themselves more clearly."} This is the stretch where better timing, cleaner boundaries, and less over-explaining will help the most.\n\nBy the end of the week, the tone softens and the lesson becomes easier to name. What looked immediate at first will make more sense once you stop forcing resolution before it is ready.\n\nTaken as a whole, this is a week for narrowing your focus instead of performing certainty. Stay close to what is verifiable, let the unnecessary friction fall away, and use the calmer moments to decide what actually deserves your effort next.`;
+    return `This week is not one mood. It is a sequence, and ${firstName}, your best read comes from noticing when the pressure changes form.\n\nEarly in the week, your ${sun} Sun wants ${sunTone.drive}, but the first move should be restraint, not proof. Start by narrowing the field. The task is not to win the whole week at once; it is to stop leaking energy into decisions that do not deserve that much of you.\n\nMidweek brings the sharper signal. ${signal ? `${signal.transitBody} pressing on your ${signal.natalBody} can make urgency sound more convincing than wisdom.` : "The pattern becomes easier to see once the week has created enough friction to reveal it."} This is where your ${moon} Moon needs ${moonTone.need}. If you override that need, the week gets noisier. If you honor it cleanly, you recover leverage.\n\nBy the end of the week, your ${rising} Rising matters more than you may expect. ${risingTone.style} can help you re-enter conversations without dragging the whole emotional weather system behind you. The win is not a dramatic resolution. The win is a cleaner pattern, better timing, and one decision that finally feels structurally honest.\n\n**Your move:** pick the one situation that keeps asking for your attention, then decide whether it needs action, a boundary, or simply less performance from you.`;
   }
 
   if (input.timeframe === "monthly") {
-    return `This month is about restructuring the way your life carries weight, not just managing your schedule more efficiently. ${sun} themes stay central, which means your priorities, standards, and long-term direction are all under review at the same time.\n\nThe first part of the month is less about visible momentum and more about recognizing what is draining too much energy behind the scenes. If you have been tolerating a rhythm that looks functional from the outside but feels expensive on the inside, that gap will become harder to ignore.\n\nThe middle of the month asks for better boundaries and cleaner commitments. ${signal ? `${signal.transitBody} interacting with your ${signal.natalBody} can make growth feel urgent, but the more strategic move is to separate real opportunity from inflated urgency.` : "This is where better structure starts paying you back."}\n\nBy the end of the month, the real win is not speed. It is building a structure that can hold more of your life without turning every ambition into constant reaction.\n\nIf you use this month well, it should leave you with less noise, fewer indirect obligations, and a clearer sense of what deserves to keep growing. The deeper benefit is steadiness: more of your energy stays available for what matters because less of it is being lost to maintenance, cleanup, or emotional spillover.`;
+    return `${firstName}, this month is about structure: not the kind that makes life rigid, but the kind that lets your actual life hold more truth without spilling into constant reaction.\n\nYour ${sun} Sun is working through the question of ${sunTone.drive}. That desire is not wrong, but it needs a better container. The first part of the month shows you what has been running on habit, obligation, or old momentum. Pay attention to the places that look functional from the outside but feel expensive on the inside.\n\nThe middle of the month asks for a cleaner relationship with pressure. ${signal ? `${signal.transitBody} in ${signal.transitSign} activating your ${signal.natalBody} can make growth feel urgent, but urgency is not the same thing as readiness.` : "The live transit layer points toward consolidation rather than spectacle."} Let your ${moon} Moon name what it actually needs: ${moonTone.need}. That need is not a weakness. It is a diagnostic tool.\n\nBy the final stretch of the month, the practical question becomes visible: what can stay, what has to be renegotiated, and what has only survived because you kept absorbing the cost? Your ${rising} Rising shows the adjustment publicly through ${risingTone.style}. People may notice the shift before they understand it.\n\nWork and money: choose the commitment that gives your effort a cleaner return. Love and family: stop translating your needs into hints. Body and energy: protect the rhythm that keeps you from confusing depletion with devotion.\n\n**Your move:** make one structural change this month that reduces hidden maintenance. The goal is not to make life smaller; it is to stop letting noise consume the energy meant for your actual growth.`;
   }
 
-  return `This year is asking for a stronger container around what matters most. ${sun} goals can grow, but only if the structure around them is honest enough to hold the weight.\n\nThe major theme is not reinvention for its own sake. It is learning how to keep ambition, emotion, and identity working in the same direction instead of pulling against one another.\n\nWhenever the year feels loud, come back to the basics: what is true, what is sustainable, and what deserves your best attention now.\n\nIf you stay faithful to what is structurally sound, the year becomes less about constant correction and more about building a life that can actually hold your growth. The point is not to make every part of life perfect. It is to make the important parts strong enough that they stop collapsing under unnecessary strain.`;
-}
+  return `${firstName}, the year is not asking you to become a different person. It is asking you to build a stronger container for the person you already are becoming.\n\nYour ${sun} Sun describes the central engine: ${sunTone.drive}. In the year ahead, that drive needs more than inspiration. It needs standards, timing, and a structure honest enough to hold the weight of what you say you want. Anything built only on mood will ask to be rebuilt later.\n\nYour ${moon} Moon names the emotional contract underneath the year. It needs ${moonTone.need}, and when that need is ignored, your system will start sending signals through fatigue, sensitivity, resentment, or over-control. The emotional work of the year is not to become unaffected. It is to stop abandoning your own weather until it becomes a storm.\n\nYour ${rising} Rising describes the visible arc: ${risingTone.style}. This is how the year teaches you to enter rooms, relationships, decisions, and opportunities with less distortion. You do not need to explain every layer of yourself to be legible. You need to make choices that let the right people read the signal clearly.\n\nThe first quarter is for clearing false urgency. The second quarter is for choosing the structure that can hold real growth. The third quarter tests whether the new rhythm works under pressure. The final quarter shows what becomes possible when your ambition, emotional truth, and public presentation stop competing with one another.\n\n${signal ? `The headline transit pattern — ${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody} — gives the year its pressure point. It shows where growth will not come from forcing the issue, but from learning how to carry power with better timing.` : "The year’s strongest signal is steadiness: less performance, more discernment, fewer inherited obligations, and a cleaner relationship with what you are actually here to build."}\n\n**Your move:** choose the life structure that can still respect you when things get busy, emotional, or uncertain. That is the structure worth building the year around.`;
+  }
 
 function buildStarScopeCopy(input: { chart: ChartPayload | null; displayName: string; hasChart: boolean; question: string }) {
   const questionMode = classifyQuestion(input.question);
