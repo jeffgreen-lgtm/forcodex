@@ -969,7 +969,7 @@ export function LiveExperience() {
     setError(null);
 
     if (!canAccessForecast(timeframe)) {
-      setToolStatus(`${forecastLabels[timeframe]} is a premium reading. Use the unlock options below when you are ready.`);
+      setToolStatus(null);
       return;
     }
 
@@ -1134,6 +1134,15 @@ export function LiveExperience() {
   const dailyReading = buildDailyReading(forecastSentences, chartBigThree, firstName, transitSignal);
   const weeklySupport = buildWeeklySupport(chartBigThree, transitSignal);
   const monthlyNarrative = chunkSentences(forecastSentences, 2);
+  const activeForecastProductKey = checkoutProductForForecast(activeForecast);
+  const activeForecastProduct = activeForecastProductKey ? PREMIUM_PRODUCTS[activeForecastProductKey] : null;
+  const activeForecastLocked = activeForecastProductKey ? !canAccessForecast(activeForecast) : false;
+  const activeForecastLockTitle =
+    activeForecast === "monthly" ? "Monthly Structure is a premium reading." : "The Yearly Blueprint is a premium publication.";
+  const activeForecastLockCopy =
+    activeForecast === "monthly"
+      ? "Unlock this month’s timing map for a clearer view of the patterns, pressure points, and better windows ahead."
+      : "Unlock the full long-form yearly reading so your bigger decisions have a stronger frame around them.";
 
   return (
     <main className="live-shell">
@@ -1522,7 +1531,18 @@ export function LiveExperience() {
               </div>
 
               <div className="live-forecast-copy">
-                {activeForecast === "daily" ? (
+                {activeForecastLocked && activeForecastProduct && activeForecastProductKey ? (
+                  <div className="live-locked-panel">
+                    <p className="reading-kicker">Premium reading</p>
+                    <h3>{activeForecastLockTitle}</h3>
+                    <p>{activeForecastLockCopy}</p>
+                    <button className="button-primary" type="button" onClick={() => void beginCheckout(activeForecastProductKey)}>
+                      Unlock {activeForecastProduct.title} — {activeForecastProduct.priceLabel}
+                    </button>
+                  </div>
+                ) : null}
+
+                {!activeForecastLocked && activeForecast === "daily" ? (
                   <>
                     <p>
                       {dailyReading.primary ||
@@ -1531,22 +1551,30 @@ export function LiveExperience() {
                     <p>{dailyReading.secondary}</p>
                   </>
                 ) : null}
-                {activeForecast === "weekly" ? (
-                  <>
-                    <p>{weeklySupport.opening}</p>
-                    <p>{weeklySupport.middle}</p>
-                    <p>{weeklySupport.closing}</p>
-                    <div className="live-timeline-list">
-                      {weeklySupport.themes.map(([day, theme]) => (
-                        <div key={day} className="live-timeline-item">
-                          <strong>{day}</strong>
-                          <p>{theme}</p>
-                        </div>
+                {!activeForecastLocked && activeForecast === "weekly" ? (
+                  forecastParagraphs.length ? (
+                    <>
+                      {forecastParagraphs.map((paragraph, index) => (
+                        <p key={`weekly-live-${index}`}>{renderMove(paragraph)}</p>
                       ))}
-                    </div>
-                  </>
+                    </>
+                  ) : (
+                    <>
+                      <p>{weeklySupport.opening}</p>
+                      <p>{weeklySupport.middle}</p>
+                      <p>{weeklySupport.closing}</p>
+                      <div className="live-timeline-list">
+                        {weeklySupport.themes.map(([day, theme]) => (
+                          <div key={day} className="live-timeline-item">
+                            <strong>{day}</strong>
+                            <p>{theme}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )
                 ) : null}
-                {activeForecast === "monthly" ? (
+                {!activeForecastLocked && activeForecast === "monthly" ? (
                   <>
                     <div className="live-longform-section">
                       <p className="reading-kicker">The overarching narrative</p>
@@ -1575,7 +1603,7 @@ export function LiveExperience() {
                     </div>
                   </>
                 ) : null}
-                {activeForecast === "yearly" ? (
+                {!activeForecastLocked && activeForecast === "yearly" ? (
                   forecastParagraphs.length ? (
                     forecastParagraphs.map((paragraph, index) => <p key={`${activeForecast}-${index}`}>{renderMove(paragraph)}</p>)
                   ) : (
