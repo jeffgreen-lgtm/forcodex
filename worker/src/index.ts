@@ -1,16 +1,22 @@
 import {
   API_PATHS,
   type ChartRequest,
+  type ConfirmCheckoutSessionRequest,
+  type CreateCheckoutSessionRequest,
   type EntitlementSyncSource,
   EntitlementSnapshot,
   type ForecastRequest,
   type ForecastTimeframe,
+  type GeocodeRequest,
   ProductKey,
+  type StudioReadRequest,
+  type StudioReadingResult,
   type VerifyAppleTransactionRequest
 } from "@cosmoscope/api/contracts";
 import { assertPromptOutput } from "@cosmoscope/api/prompts";
 import { PREMIUM_PRODUCTS } from "@cosmoscope/api/products";
 import type { EntitlementRow } from "@cosmoscope/db/types";
+import * as Astronomy from "astronomy-engine";
 import { WORKER_ROUTE_MANIFEST } from "./contracts";
 
 type LoginPayload = {
@@ -27,6 +33,10 @@ type LoveScopeRequest = {
   partnerName?: string;
   relationshipType?: string;
   situation?: string;
+};
+
+type AdminPurgeUsersRequest = {
+  emails?: string[];
 };
 
 type SignupPayload = LoginPayload & {
@@ -85,6 +95,8 @@ type ProfileRow = {
   birth_place: string | null;
   birth_time: string | null;
   display_name: string | null;
+  latitude: number | null;
+  longitude: number | null;
   timezone: string | null;
   timezone_offset: number | null;
   unknown_birth_time: boolean;
@@ -101,6 +113,12 @@ type ForecastRow = {
 type Env = {
   APP_ENV?: string;
   APPLE_SERVER_NOTIFICATION_BEARER?: string;
+  APP_URL?: string;
+  ASTROLOGY_API_KEY?: string;
+  CORS_ALLOWED_ORIGINS?: string;
+  COSMOSCOPE_STUDIO_ACCESS_KEY?: string;
+  PAYMENTS_DISABLED_PREVIEW?: string;
+  STRIPE_SECRET_KEY?: string;
   SUPABASE_ANON_KEY: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   SUPABASE_URL: string;
@@ -117,18 +135,14 @@ class HttpError extends Error {
   }
 }
 
-const corsHeaders = {
-  "access-control-allow-headers": "authorization, content-type",
-  "access-control-allow-methods": "GET,POST,OPTIONS",
-  "access-control-allow-origin": "*"
-};
+const CHART_SOURCE_VERSION = "phase3-astrologyapi-v1";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       if (request.method === "OPTIONS") {
         return new Response(null, {
-          headers: corsHeaders,
+          headers: getCorsHeaders(request, env),
           status: 204
         });
       }
@@ -153,6 +167,18 @@ export default {
           return await handleLogin(request, env);
         case `POST ${API_PATHS.signup}`:
           return await handleSignup(request, env);
+        case `POST ${API_PATHS.resetPassword}`:
+          return await handleResetPassword(request, env);
+        case `POST ${API_PATHS.updatePassword}`:
+          return await handleUpdatePassword(request, env);
+        case `POST ${API_PATHS.geocode}`:
+          return await handleGeocode(request);
+        case `POST ${API_PATHS.studioRead}`:
+          return await handleStudioRead(request, env);
+        case `POST ${API_PATHS.createCheckoutSession}`:
+          return await handleCreateCheckoutSession(request, env);
+        case `POST ${API_PATHS.confirmCheckoutSession}`:
+          return await handleConfirmCheckoutSession(request, env);
         case `POST ${API_PATHS.deleteAccount}`:
           return await handleDeleteAccount(request, env);
         case `GET ${API_PATHS.entitlements}`:
@@ -166,32 +192,24 @@ export default {
         case `POST ${API_PATHS.lovescope}`:
           return await handleLoveScope(request, env);
         case `POST ${API_PATHS.forecast}`:
-          if (routeKey === `POST ${API_PATHS.forecast}`) {
-            return await handleForecast(request, env);
-          }
+          return await handleForecast(request, env);
         case `POST ${API_PATHS.verifyAppleTransaction}`:
           return await handleVerifyAppleTransaction(request, env);
         case `POST ${API_PATHS.appleServerNotification}`:
           return await handleAppleServerNotification(request, env);
-          return json(
-            {
-              error: "not_implemented",
-              message: "This route is reserved in the flagship foundation but the live engine is not wired yet.",
-              route: routeKey
-            },
-            { status: 501 }
-          );
         default:
           return json(
             {
               error: "not_found",
               message: "Route not found."
             },
-            { status: 404 }
+            { status: 404 },
+            request,
+            env
           );
       }
     } catch (error) {
-      return handleError(error);
+      return handleError(error, request, env);
     }
   }
 };
@@ -211,7 +229,7 @@ async function handleDeleteAccount(request: Request, env: Env) {
   }
 
   return new Response(null, {
-    headers: corsHeaders,
+    headers: getCorsHeaders(request, env),
     status: 204
   });
 }
@@ -287,30 +305,329 @@ async function handleLedger(request: Request, env: Env) {
   );
 }
 
+async function handleGeocode(request: Request) {
+  const body = await readJson<GeocodeRequest>(request);
+  const query = requireString(body.query, "query");
+  const payload = await fetchGeocodeResults(query);
+  const fallbackQuery = query.split(",")[0]?.trim();
+  const fallbackPayload =
+    payload.results?.length || !fallbackQuery || fallbackQuery.toLowerCase() === query.toLowerCase()
+      ? null
+      : await fetchGeocodeResults(fallbackQuery);
+  const places = (payload.results?.length ? payload.results : fallbackPayload?.results) ?? [];
+
+  const results = places.slice(0, 5).map((place) => ({
+    id: place.id,
+    label: [place.name, place.admin1, place.country].filter(Boolean).join(", "),
+    latitude: place.latitude,
+    longitude: place.longitude,
+    timezone: place.timezone ?? "UTC"
+  }));
+
+  return json({ results });
+}
+
+async function handleCreateCheckoutSession(request: Request, env: Env) {
+  assertSupabaseEnv(env);
+  assertStripeEnv(env);
+  const auth = await authenticateRequest(request, env);
+  const body = await readJson<CreateCheckoutSessionRequest>(request);
+  const productKey = requireProductKey(body.productKey);
+  const product = PREMIUM_PRODUCTS[productKey];
+
+  if (!product.stripePriceLookupKey) {
+    throw new HttpError(400, "This product is not configured for Stripe checkout.");
+  }
+
+  const origin = getAppOrigin(request, env);
+  const successUrl = new URL("/app", origin);
+  successUrl.searchParams.set("checkout", "success");
+  successUrl.searchParams.set("session_id", "{CHECKOUT_SESSION_ID}");
+
+  const cancelUrl = new URL("/app", origin);
+  cancelUrl.searchParams.set("checkout", "cancel");
+  cancelUrl.searchParams.set("product", productKey);
+
+  const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    body: buildFormBody({
+      "allow_promotion_codes": "true",
+      "cancel_url": cancelUrl.toString(),
+      "client_reference_id": auth.user.id,
+      "customer_email": auth.user.email ?? "",
+      "line_items[0][price]": await resolveStripePriceId(env, product.stripePriceLookupKey),
+      "line_items[0][quantity]": "1",
+      "metadata[product_key]": productKey,
+      "metadata[user_id]": auth.user.id,
+      "mode": product.kind === "subscription" ? "subscription" : "payment",
+      "success_url": successUrl.toString()
+    }),
+    headers: stripeHeaders(env),
+    method: "POST"
+  });
+  const stripePayload = (await stripeResponse.json().catch(() => null)) as { id?: string; url?: string; error?: { message?: string } } | null;
+
+  if (!stripeResponse.ok || !stripePayload?.id || !stripePayload.url) {
+    throw new HttpError(stripeResponse.status || 502, "Unable to start checkout.", stripePayload);
+  }
+
+  return json({
+    productKey,
+    sessionId: stripePayload.id,
+    url: stripePayload.url
+  });
+}
+
+async function handleConfirmCheckoutSession(request: Request, env: Env) {
+  assertSupabaseEnv(env);
+  assertStripeEnv(env);
+  const auth = await authenticateRequest(request, env);
+  const body = await readJson<ConfirmCheckoutSessionRequest>(request);
+  const sessionId = requireString(body.sessionId, "sessionId");
+  const session = await fetchStripeCheckoutSession(env, sessionId);
+
+  if (session.client_reference_id !== auth.user.id && session.metadata?.user_id !== auth.user.id) {
+    throw new HttpError(403, "This checkout session does not belong to the active member.");
+  }
+
+  const productKey = requireProductKey(session.metadata?.product_key);
+  const product = PREMIUM_PRODUCTS[productKey];
+  const purchasedAt = session.created ? new Date(session.created * 1000).toISOString() : new Date().toISOString();
+
+  let isActive = false;
+  let expiresAt: string | null = null;
+
+  if (product.kind === "subscription") {
+    if (!session.subscription) {
+      throw new HttpError(400, "The checkout session did not create a subscription.");
+    }
+
+    const subscription = await fetchStripeSubscription(env, session.subscription);
+    isActive = ["active", "trialing"].includes(subscription.status ?? "");
+    expiresAt = subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null;
+  } else {
+    isActive = session.payment_status === "paid";
+  }
+
+  if (!isActive) {
+    throw new HttpError(409, "The payment is not complete yet.");
+  }
+
+  const entitlements = await applyEntitlementUpdate(env, {
+    expiresAt,
+    isActive: true,
+    platform: "web",
+    productKey,
+    purchasedAt,
+    source: "stripe",
+    userId: auth.user.id
+  });
+
+  return json({
+    entitlement: mapEntitlementsToSnapshot(entitlements),
+    productKey,
+    sessionId,
+    status: "confirmed"
+  });
+}
+
+async function fetchGeocodeResults(query: string) {
+  const primary = await fetchOpenMeteoGeocode(query);
+  if (primary.results.length) {
+    return { results: primary.results };
+  }
+
+  const secondary = await fetchNominatimGeocode(query);
+  return { results: secondary.results };
+}
+
+type GeocodePlace = {
+  admin1?: string;
+  country?: string;
+  id: number;
+  latitude: number;
+  longitude: number;
+  name: string;
+  timezone?: string;
+};
+
+async function fetchOpenMeteoGeocode(query: string): Promise<{ results: GeocodePlace[] }> {
+  const params = new URLSearchParams({
+    count: "5",
+    format: "json",
+    language: "en",
+    name: query
+  });
+  const response = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`, {
+    headers: {
+      accept: "application/json"
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        results?: GeocodePlace[];
+      }
+    | null;
+
+  if (!response.ok) {
+    throw new HttpError(response.status, "Unable to resolve the birth place.", payload);
+  }
+
+  return { results: payload?.results ?? [] };
+}
+
+async function fetchNominatimGeocode(query: string): Promise<{ results: GeocodePlace[] }> {
+  const params = new URLSearchParams({
+    addressdetails: "1",
+    format: "jsonv2",
+    limit: "5",
+    q: query
+  });
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "CosmoScope/1.0"
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | Array<{
+        address?: {
+          city?: string;
+          country?: string;
+          county?: string;
+          state?: string;
+          town?: string;
+          village?: string;
+        };
+        display_name?: string;
+        lat: string;
+        lon: string;
+        name?: string;
+        osm_id?: number;
+        place_id?: number;
+      }>
+    | null;
+
+  if (!response.ok) {
+    throw new HttpError(response.status, "Unable to resolve the birth place.", payload);
+  }
+
+  const results = await Promise.all(
+    (payload ?? []).map(async (place, index): Promise<GeocodePlace | null> => {
+      const latitude = Number(place.lat);
+      const longitude = Number(place.lon);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null;
+      }
+
+      return {
+        admin1: place.address?.state ?? place.address?.county,
+        country: place.address?.country,
+        id: place.place_id ?? place.osm_id ?? index + 1,
+        latitude,
+        longitude,
+        name:
+          place.name ??
+          place.address?.city ??
+          place.address?.town ??
+          place.address?.village ??
+          place.display_name?.split(",")[0] ??
+          query,
+        timezone: await lookupTimezone(latitude, longitude)
+      };
+    })
+  );
+
+  return { results: results.filter((place): place is GeocodePlace => Boolean(place)) };
+}
+
+async function lookupTimezone(latitude: number, longitude: number) {
+  const params = new URLSearchParams({
+    current: "temperature_2m",
+    latitude: String(latitude),
+    longitude: String(longitude),
+    timezone: "auto"
+  });
+  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
+    headers: {
+      accept: "application/json"
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as { timezone?: string } | null;
+
+  if (!response.ok) {
+    return "UTC";
+  }
+
+  return payload?.timezone?.trim() || "UTC";
+}
+
+type AdminUserRecord = {
+  email?: string;
+  id: string;
+};
+
+async function listSupabaseUsers(env: Env) {
+  const users: AdminUserRecord[] = [];
+  let page = 1;
+
+  while (page <= 20) {
+    const params = new URLSearchParams({
+      page: String(page),
+      per_page: "200"
+    });
+    const response = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users?${params.toString()}`, {
+      headers: serviceRoleHeaders(env)
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | { users?: AdminUserRecord[] }
+      | { error?: { message?: string } }
+      | null;
+
+    if (!response.ok) {
+      throw new HttpError(response.status, "Unable to list Supabase users.", payload);
+    }
+
+    const batch = payload && "users" in payload ? payload.users ?? [] : [];
+    users.push(...batch);
+
+    if (batch.length < 200) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return users;
+}
+
 async function handleChart(request: Request, env: Env) {
   assertSupabaseEnv(env);
   const auth = await authenticateRequest(request, env);
   const body = await readJson<ChartRequest>(request);
   const profileRow = await loadProfile(env, auth.user.id);
   const cachedChart = await loadChart(env, auth.user.id);
+  const astrologyInput = resolveAstrologyProfileInput({
+    birthDate: body.birthDate ?? profileRow?.birth_date ?? null,
+    birthPlace: body.birthPlace ?? profileRow?.birth_place ?? null,
+    birthTime: body.birthTime ?? profileRow?.birth_time ?? null,
+    latitude: body.latitude ?? profileRow?.latitude ?? null,
+    longitude: body.longitude ?? profileRow?.longitude ?? null,
+    timezone: body.timezone ?? profileRow?.timezone ?? null,
+    timezoneOffset: body.timezoneOffset ?? profileRow?.timezone_offset ?? null,
+    unknownBirthTime: profileRow?.unknown_birth_time ?? false
+  });
+  const liveTransitSignal = await fetchDominantTransitSignal(env, astrologyInput, "daily");
 
-  if (cachedChart) {
+  if (cachedChart?.source_version === CHART_SOURCE_VERSION) {
     return json({
       cached: true,
-      chart: cachedChart.chart_json,
+      chart: mergeChartWithTransit(cachedChart.chart_json, liveTransitSignal),
       summary: cachedChart.chart_summary,
       updatedAt: cachedChart.updated_at
     });
   }
 
-  const chart = buildChartSnapshot({
-    birthDate: body.birthDate ?? profileRow?.birth_date ?? null,
-    birthPlace: body.birthPlace ?? profileRow?.birth_place ?? null,
-    birthTime: body.birthTime ?? profileRow?.birth_time ?? null,
-    displayName: profileRow?.display_name ?? auth.user.email ?? "Member",
-    timezone: body.timezone ?? profileRow?.timezone ?? null,
-    unknownBirthTime: profileRow?.unknown_birth_time ?? false
-  });
+  const chart = await buildAstrologyChartSnapshot(env, astrologyInput, profileRow?.display_name ?? auth.user.email ?? "Member");
 
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/natal_charts`, {
     body: JSON.stringify({
@@ -334,7 +651,7 @@ async function handleChart(request: Request, env: Env) {
 
   return json({
     cached: false,
-    chart: chart.chart,
+    chart: mergeChartWithTransit(chart.chart, liveTransitSignal),
     summary: chart.summary,
     updatedAt: new Date().toISOString()
   });
@@ -346,13 +663,22 @@ async function handleForecast(request: Request, env: Env) {
   const body = await readJson<ForecastRequest>(request);
   const timeframe = body.timeframe;
 
-  if (!["daily", "weekly", "monthly"].includes(timeframe)) {
+  if (!["daily", "weekly", "monthly", "yearly"].includes(timeframe)) {
     throw new HttpError(400, "Unsupported timeframe.");
+  }
+
+  const entitlements = await loadEntitlements(env, auth.token);
+  if (timeframe === "monthly" && !hasProductAccess(env, entitlements, "forecast_monthly")) {
+    throw new HttpError(402, "Monthly structure is a premium reading.");
+  }
+
+  if (timeframe === "yearly" && !hasProductAccess(env, entitlements, "yearly_blueprint")) {
+    throw new HttpError(402, "Yearly Blueprint is a premium reading.");
   }
 
   const effectiveDate = getEffectiveDate(timeframe);
   const cached = await loadForecast(env, auth.user.id, timeframe, effectiveDate, auth.token);
-  if (cached) {
+  if (cached && !shouldRegenerateForecast(cached.content, timeframe)) {
     return json({
       cached: true,
       content: cached.content,
@@ -363,8 +689,26 @@ async function handleForecast(request: Request, env: Env) {
 
   const profile = await loadProfile(env, auth.user.id);
   const chart = await loadChart(env, auth.user.id);
+  const displayName = profile?.display_name ?? auth.user.email ?? "Member";
+  const astrologyInput = resolveAstrologyProfileInput({
+    birthDate: profile?.birth_date ?? null,
+    birthPlace: profile?.birth_place ?? null,
+    birthTime: profile?.birth_time ?? null,
+    latitude: profile?.latitude ?? null,
+    longitude: profile?.longitude ?? null,
+    timezone: profile?.timezone ?? null,
+    timezoneOffset: profile?.timezone_offset ?? null,
+    unknownBirthTime: profile?.unknown_birth_time ?? false
+  });
+  const normalizedChart = normalizeChartPayload(chart?.chart_json);
+  const dominantTransit = await fetchDominantTransitSignal(
+    env,
+    astrologyInput,
+    timeframe === "daily" ? "daily" : timeframe === "weekly" ? "weekly" : "long_range"
+  );
   const content = buildForecastCopy({
-    displayName: profile?.display_name ?? auth.user.email ?? "Member",
+    chart: normalizedChart ? { ...normalizedChart, dominantTransit: dominantTransit ?? undefined } : normalizedChart,
+    displayName,
     timeframe,
     hasChart: Boolean(chart)
   });
@@ -397,6 +741,109 @@ async function handleForecast(request: Request, env: Env) {
   });
 }
 
+async function handleStudioRead(request: Request, env: Env) {
+  const body = await readJson<StudioReadRequest>(request);
+  const expectedAccessKey = env.COSMOSCOPE_STUDIO_ACCESS_KEY?.trim();
+  if (!expectedAccessKey) {
+    throw new HttpError(503, "Creator Studio is not configured yet.");
+  }
+
+  if ((body.accessKey ?? "").trim() !== expectedAccessKey) {
+    throw new HttpError(401, "Invalid Creator Studio access key.");
+  }
+
+  const astrologyInput = resolveAstrologyProfileInput({
+    birthDate: body.birthDate,
+    birthPlace: body.birthPlace,
+    birthTime: body.birthTime ?? null,
+    latitude: body.latitude,
+    longitude: body.longitude,
+    timezone: body.timezone,
+    timezoneOffset: body.timezoneOffset ?? null,
+    unknownBirthTime: body.unknownBirthTime ?? false
+  });
+  const chart = await buildAstrologyChartSnapshot(env, astrologyInput, body.label);
+
+  const normalizedChart = normalizeChartPayload(chart.chart as Record<string, unknown>);
+  const hasChart = Boolean(normalizedChart);
+  const forecastTimeframe = resolveStudioForecastTimeframe(body.readingType);
+  const dominantTransit = forecastTimeframe
+    ? await fetchDominantTransitSignal(
+        env,
+        astrologyInput,
+        forecastTimeframe === "daily" ? "daily" : forecastTimeframe === "weekly" ? "weekly" : "long_range"
+      )
+    : await fetchDominantTransitSignal(env, astrologyInput, "daily");
+  const chartWithTransit = normalizedChart
+    ? { ...normalizedChart, dominantTransit: dominantTransit ?? undefined }
+    : normalizedChart;
+  const forecast = forecastTimeframe
+    ? buildForecastCopy({
+        chart: chartWithTransit,
+        displayName: body.label,
+        timeframe: forecastTimeframe,
+        hasChart
+      })
+    : body.readingType === "starscope"
+      ? buildStarScopeCopy({
+          chart: chartWithTransit,
+          displayName: body.label,
+          hasChart,
+          question: body.question?.trim() || "What deserves the cleanest attention right now?"
+        })
+      : body.readingType === "lovescope"
+        ? buildLoveScopeCopy({
+            chart: chartWithTransit,
+            displayName: body.label,
+            hasChart,
+            partnerBirthDate: null,
+            partnerName: "the other person",
+            relationshipType: "Undefined",
+            situation: body.question?.trim() || "The connection matters, but the terms are not fully named."
+          })
+        : buildStudioMarketingLead({
+            audience: body.audience ?? "advertising",
+            chart: normalizedChart,
+            label: body.label,
+            readingType: body.readingType
+          });
+
+  const result = buildStudioReadingResult({
+    audience: body.audience ?? "personal",
+    chart,
+    forecast,
+    label: body.label,
+    question: body.question?.trim() || "",
+    readingType: body.readingType
+  });
+
+  return json(result);
+}
+
+function shouldRegenerateForecast(content: string, timeframe: ForecastTimeframe) {
+  if (content.includes("@")) {
+    return true;
+  }
+
+  if (content.includes("reduces structural tension fastest")) {
+    return true;
+  }
+
+  if (timeframe === "daily" && !content.includes("\n\n")) {
+    return true;
+  }
+
+  if (timeframe === "weekly" && !content.includes("\n\n")) {
+    return true;
+  }
+
+  if (timeframe === "monthly" && !content.includes("\n\n")) {
+    return true;
+  }
+
+  return false;
+}
+
 async function handleStarScope(request: Request, env: Env) {
   assertSupabaseEnv(env);
   const auth = await authenticateRequest(request, env);
@@ -404,7 +851,7 @@ async function handleStarScope(request: Request, env: Env) {
   const question = requireString(body.question, "question");
   const entitlements = await loadEntitlements(env, auth.token);
 
-  if (!hasProductAccess(entitlements, "starscope_unlock")) {
+  if (!hasProductAccess(env, entitlements, "starscope_unlock")) {
     throw new HttpError(402, "StarScope requires Cosmic Pass or the one-time unlock.", {
       requiredProductKey: "starscope_unlock"
     });
@@ -413,6 +860,7 @@ async function handleStarScope(request: Request, env: Env) {
   const profile = await loadProfile(env, auth.user.id);
   const chart = await loadChart(env, auth.user.id);
   const content = buildStarScopeCopy({
+    chart: normalizeChartPayload(chart?.chart_json),
     displayName: profile?.display_name ?? auth.user.email ?? "Member",
     hasChart: Boolean(chart),
     question
@@ -434,7 +882,7 @@ async function handleLoveScope(request: Request, env: Env) {
   const situation = requireString(body.situation, "situation");
   const entitlements = await loadEntitlements(env, auth.token);
 
-  if (!hasProductAccess(entitlements, "lovescope_unlock")) {
+  if (!hasProductAccess(env, entitlements, "lovescope_unlock")) {
     throw new HttpError(402, "LoveScope requires Cosmic Pass or the one-time unlock.", {
       requiredProductKey: "lovescope_unlock"
     });
@@ -443,6 +891,7 @@ async function handleLoveScope(request: Request, env: Env) {
   const profile = await loadProfile(env, auth.user.id);
   const chart = await loadChart(env, auth.user.id);
   const content = buildLoveScopeCopy({
+    chart: normalizeChartPayload(chart?.chart_json),
     displayName: profile?.display_name ?? auth.user.email ?? "Member",
     hasChart: Boolean(chart),
     partnerBirthDate: body.partnerBirthDate ?? null,
@@ -551,6 +1000,57 @@ async function handleLogin(request: Request, env: Env) {
   return json(normalizeAuthPayload(payload), { status: 200 });
 }
 
+async function handleResetPassword(request: Request, env: Env) {
+  assertSupabaseEnv(env);
+  const body = await readJson<LoginPayload>(request);
+  const email = requireString(body.email, "email");
+  const redirectTo = `${getAppOrigin(request, env).replace(/\/$/, "")}/reset`;
+
+  const response = await fetch(`${env.SUPABASE_URL}/auth/v1/recover`, {
+    body: JSON.stringify({ email, redirectTo }),
+    headers: jsonHeaders(env.SUPABASE_ANON_KEY),
+    method: "POST"
+  });
+  const payload = await readSupabasePayload(response);
+
+  if (!response.ok) {
+    throw new HttpError(response.status, "Unable to send reset email.", payload);
+  }
+
+  return json({
+    message: "If that account exists, a reset email is on the way."
+  });
+}
+
+async function handleUpdatePassword(request: Request, env: Env) {
+  assertSupabaseEnv(env);
+  const auth = await authenticateRequest(request, env);
+  const body = await readJson<{ password?: string }>(request);
+  const password = requireString(body.password, "password");
+
+  if (password.length < 6) {
+    throw new HttpError(400, "Choose a password with at least 6 characters.");
+  }
+
+  const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+    body: JSON.stringify({ password }),
+    headers: {
+      ...userHeaders(env, auth.token),
+      "content-type": "application/json"
+    },
+    method: "PUT"
+  });
+  const payload = await readSupabasePayload(response);
+
+  if (!response.ok) {
+    throw new HttpError(response.status, "Unable to update the password.", payload);
+  }
+
+  return json({
+    message: "Password updated. You can return to your reading now."
+  });
+}
+
 async function handleSignup(request: Request, env: Env) {
   assertSupabaseEnv(env);
   const body = await readJson<SignupPayload>(request);
@@ -566,7 +1066,7 @@ async function handleSignup(request: Request, env: Env) {
   const payload = (await readSupabasePayload(response)) as SupabaseAuthPayload;
 
   if (!response.ok) {
-    throw new HttpError(response.status, "Unable to sign up.", payload);
+    throw new HttpError(response.status, describeSignupError(payload), payload);
   }
 
   const userId = payload.user?.id ?? payload.session?.user?.id;
@@ -659,7 +1159,7 @@ async function authenticateRequest(request: Request, env: Env) {
 
 async function loadProfile(env: Env, userId: string) {
   const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/user_profiles?user_id=eq.${encodeURIComponent(userId)}&select=display_name,birth_date,birth_time,birth_place,timezone,timezone_offset,unknown_birth_time`,
+    `${env.SUPABASE_URL}/rest/v1/user_profiles?user_id=eq.${encodeURIComponent(userId)}&select=display_name,birth_date,birth_time,birth_place,latitude,longitude,timezone,timezone_offset,unknown_birth_time`,
     {
       headers: {
         ...serviceRoleHeaders(env),
@@ -842,95 +1342,168 @@ function buildChartSnapshot(input: {
   birthPlace: string | null;
   birthTime: string | null;
   displayName: string;
+  latitude: number | null;
+  longitude: number | null;
   timezone: string | null;
   unknownBirthTime: boolean;
 }) {
-  const seed = `${input.birthDate ?? "unknown"}|${input.birthTime ?? "12:00"}|${input.birthPlace ?? "unknown"}|${input.timezone ?? "utc"}`;
-  const sun = getApproximateSunSign(input.birthDate);
-  const moon = "ephemeris pending";
-  const rising = input.unknownBirthTime ? "requires birth time" : "ephemeris pending";
-  const fallbackTone = pickFrom(seed, ["deliberate", "steady", "direct", "private", "measured"]);
-  const summary = sun
-    ? `${input.displayName.split(" ")[0]}'s foundation chart currently resolves the Sun as ${sun}; Moon and Rising require the full planetary engine before we should label them.`
-    : `${input.displayName.split(" ")[0]}'s foundation chart is cached, but the birth date needs review before we assign a Sun sign.`;
+  const birthDate = requireDateString(input.birthDate, "birthDate");
+  const birthTime = input.unknownBirthTime ? "12:00" : requireTimeString(input.birthTime, "birthTime");
+  const latitude = requireFiniteNumber(input.latitude, "latitude");
+  const longitude = requireFiniteNumber(input.longitude, "longitude");
+  const timezone = input.timezone?.trim() || "UTC";
+  const birthInstant = zonedLocalTimeToUtc(birthDate, birthTime, timezone);
+  const natalPlanets = buildPlanetSet(birthInstant);
+  const transits = buildPlanetSet(new Date());
+  const risingLongitude = input.unknownBirthTime ? null : calculateAscendantLongitude(birthInstant, latitude, longitude);
+  const risingSign = risingLongitude === null ? "Solar chart" : zodiacAt(risingLongitude).sign;
+  const strongestTransit = findStrongestTransit(natalPlanets, transits);
+  const sun = requirePlacement(natalPlanets, "Sun");
+  const moon = requirePlacement(natalPlanets, "Moon");
+  const summary = `Your chart centers on ${sun.sign} drive, ${moon.sign} emotional timing, and ${risingSign} presentation. Together, these placements show how you pursue what matters, how you react under pressure, and how other people read you before you explain yourself.`;
 
   return {
     chart: {
       bigThree: {
-        moon,
-        rising,
-        sun: sun ?? fallbackTone
+        moon: moon.sign,
+        rising: risingSign,
+        sun: sun.sign
       },
       accuracy: {
-        moon: "pending_ephemeris_engine",
-        rising: input.unknownBirthTime ? "unknown_birth_time" : "pending_ephemeris_engine",
-        sun: sun ? "approximate_tropical_date_range" : "pending_birth_date"
+        engine: "astronomy-engine",
+        houses: input.unknownBirthTime ? "solar_chart_no_birth_time" : "ascendant_calculated_from_sidereal_time",
+        planets: "geocentric_true_ecliptic_longitude"
       },
       birth: {
         date: input.birthDate,
+        instantUtc: birthInstant.toISOString(),
+        latitude,
+        longitude,
         place: input.birthPlace,
         time: input.birthTime,
-        timezone: input.timezone,
+        timezone,
         unknownBirthTime: input.unknownBirthTime
+      },
+      dominantTransit: strongestTransit,
+      planets: natalPlanets,
+      transits,
+      wheel: {
+        ascendant: risingLongitude === null ? null : degreePayload(risingLongitude),
+        midheaven: risingLongitude === null ? null : degreePayload(calculateMidheavenLongitude(birthInstant, longitude))
       }
     },
-    sourceVersion: "phase1-sun-sign-foundation",
+    sourceVersion: CHART_SOURCE_VERSION,
     summary
   };
 }
 
-function getApproximateSunSign(birthDate: string | null) {
-  if (!birthDate) {
-    return null;
-  }
+type Placement = {
+  body: string;
+  degree: number;
+  degreeInSign: number;
+  retrograde: boolean;
+  sign: string;
+};
 
-  const [, , monthRaw, dayRaw] = birthDate.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? [];
-  const month = Number(monthRaw);
-  const day = Number(dayRaw);
+type ChartPayload = {
+  bigThree?: {
+    moon?: string;
+    rising?: string;
+    sun?: string;
+  };
+  dominantTransit?: TransitSignal;
+  planets?: Placement[];
+  transits?: Placement[];
+};
 
-  if (!Number.isInteger(month) || !Number.isInteger(day)) {
-    return null;
-  }
+type TransitSignal = {
+  aspect: string;
+  exactness: number;
+  natalBody: string;
+  natalSign: string;
+  orb: number;
+  transitBody: string;
+  transitSign: string;
+};
 
-  const marker = month * 100 + day;
-  if (marker >= 321 && marker <= 419) return "Aries";
-  if (marker >= 420 && marker <= 520) return "Taurus";
-  if (marker >= 521 && marker <= 620) return "Gemini";
-  if (marker >= 621 && marker <= 722) return "Cancer";
-  if (marker >= 723 && marker <= 822) return "Leo";
-  if (marker >= 823 && marker <= 922) return "Virgo";
-  if (marker >= 923 && marker <= 1022) return "Libra";
-  if (marker >= 1023 && marker <= 1121) return "Scorpio";
-  if (marker >= 1122 && marker <= 1221) return "Sagittarius";
-  if (marker >= 1222 || marker <= 119) return "Capricorn";
-  if (marker >= 120 && marker <= 218) return "Aquarius";
-  if (marker >= 219 && marker <= 320) return "Pisces";
+function displayNameToFirstName(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, (match) => match.split("@")[0] ?? "Member")
+    .split(/[@._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 
-  return null;
+  return cleaned.split(" ")[0] || "Member";
 }
 
-function buildForecastCopy(input: { displayName: string; timeframe: ForecastTimeframe; hasChart: boolean }) {
-  const prefix =
-    input.timeframe === "daily"
-      ? "Today favors deliberate choices over emotional drift."
-      : input.timeframe === "weekly"
-        ? "This week rewards cleaner priorities and fewer reactive moves."
-        : "This month works best when you narrow your focus and protect your pace.";
-  const second = input.hasChart
-    ? `**Your move:** let ${input.displayName.split(" ")[0]}'s next step be smaller, clearer, and harder to misread.`
-    : `**Your move:** finish your chart setup so the next read can be sharper and more personal.`;
+const ASTROLOGY_BODIES = [
+  Astronomy.Body.Sun,
+  Astronomy.Body.Moon,
+  Astronomy.Body.Mercury,
+  Astronomy.Body.Venus,
+  Astronomy.Body.Mars,
+  Astronomy.Body.Jupiter,
+  Astronomy.Body.Saturn,
+  Astronomy.Body.Uranus,
+  Astronomy.Body.Neptune,
+  Astronomy.Body.Pluto
+] as const;
 
-  return `${prefix} ${second}`;
+const ZODIAC_SIGNS = [
+  "Aries",
+  "Taurus",
+  "Gemini",
+  "Cancer",
+  "Leo",
+  "Virgo",
+  "Libra",
+  "Scorpio",
+  "Sagittarius",
+  "Capricorn",
+  "Aquarius",
+  "Pisces"
+] as const;
+
+function buildForecastCopy(input: { chart: ChartPayload | null; displayName: string; timeframe: ForecastTimeframe; hasChart: boolean }) {
+  const signal = input.chart?.dominantTransit;
+  const sun = input.chart?.bigThree?.sun ?? "your core pattern";
+  const rising = input.chart?.bigThree?.rising ?? "your outer rhythm";
+  if (!input.hasChart) {
+    return `Finish your chart setup so the next reading can be more precise and more personal.\n\n**Your move:** add the exact birth record, then come back for the full read.`;
+  }
+
+  if (input.timeframe === "daily") {
+    const firstParagraph = signal
+      ? `Today opens with ${signal.transitBody} pressing on your ${signal.natalBody}, which makes timing more important than force. You may feel a stronger urge to react quickly, prove a point, or lock a decision before it has earned that level of certainty. The better use of this energy is to notice where tension keeps repeating, because that is usually where the real adjustment wants to happen. ${sun} themes are especially active now, so the issue is not only what you want, but the way you are carrying it through the day. If something feels louder than usual, treat that as a cue to slow down long enough to read what is actually being asked of you.`
+      : `Today asks for steadier pacing and better attention to what is actually asking for care. The emotional tone may shift quickly, but that does not mean you need to follow every change in atmosphere. ${sun} themes are running close to the surface, which makes your priorities feel more personal than usual. Let that sharpen your focus instead of scattering it. The strongest progress today will come from staying with what is true long enough to understand it.`;
+    const secondParagraph = `${rising} shapes the way this day lands in the outside world, so the way you enter conversations matters almost as much as what you say. If friction starts building, assume the timing needs work before assuming the whole direction is wrong. Give yourself enough room to respond with intention instead of reflex, because the tone you set early will shape the rest of the day more than one dramatic moment will.`;
+    const close = `**Your move:** choose the decision that lowers noise and increases clarity, then let that choice stand before adding another demand.`;
+    return `${firstParagraph}\n\n${secondParagraph}\n\n${close}`;
+  }
+
+  if (input.timeframe === "weekly") {
+    return `The beginning of the week asks for more patience than pride. If you rush to prove a point too early, you can spend energy that would be better used building real leverage.\n\nThe middle of the week becomes more revealing. ${signal ? `${signal.transitBody} raises the emotional volume and can make urgency feel more legitimate than it really is.` : "Patterns start to show themselves more clearly."} This is the stretch where better timing, cleaner boundaries, and less over-explaining will help the most.\n\nBy the end of the week, the tone softens and the lesson becomes easier to name. What looked immediate at first will make more sense once you stop forcing resolution before it is ready.\n\nTaken as a whole, this is a week for narrowing your focus instead of performing certainty. Stay close to what is verifiable, let the unnecessary friction fall away, and use the calmer moments to decide what actually deserves your effort next.`;
+  }
+
+  if (input.timeframe === "monthly") {
+    return `This month is about restructuring the way your life carries weight, not just managing your schedule more efficiently. ${sun} themes stay central, which means your priorities, standards, and long-term direction are all under review at the same time.\n\nThe first part of the month is less about visible momentum and more about recognizing what is draining too much energy behind the scenes. If you have been tolerating a rhythm that looks functional from the outside but feels expensive on the inside, that gap will become harder to ignore.\n\nThe middle of the month asks for better boundaries and cleaner commitments. ${signal ? `${signal.transitBody} interacting with your ${signal.natalBody} can make growth feel urgent, but the more strategic move is to separate real opportunity from inflated urgency.` : "This is where better structure starts paying you back."}\n\nBy the end of the month, the real win is not speed. It is building a structure that can hold more of your life without turning every ambition into constant reaction.\n\nIf you use this month well, it should leave you with less noise, fewer indirect obligations, and a clearer sense of what deserves to keep growing. The deeper benefit is steadiness: more of your energy stays available for what matters because less of it is being lost to maintenance, cleanup, or emotional spillover.`;
+  }
+
+  return `This year is asking for a stronger container around what matters most. ${sun} goals can grow, but only if the structure around them is honest enough to hold the weight.\n\nThe major theme is not reinvention for its own sake. It is learning how to keep ambition, emotion, and identity working in the same direction instead of pulling against one another.\n\nWhenever the year feels loud, come back to the basics: what is true, what is sustainable, and what deserves your best attention now.\n\nIf you stay faithful to what is structurally sound, the year becomes less about constant correction and more about building a life that can actually hold your growth. The point is not to make every part of life perfect. It is to make the important parts strong enough that they stop collapsing under unnecessary strain.`;
 }
 
-function buildStarScopeCopy(input: { displayName: string; hasChart: boolean; question: string }) {
+function buildStarScopeCopy(input: { chart: ChartPayload | null; displayName: string; hasChart: boolean; question: string }) {
   const questionMode = classifyQuestion(input.question);
+  const signal = input.chart?.dominantTransit;
+  const pressure = signal ? `${signal.transitBody}-${signal.natalBody}` : "current timing";
   const firstSentence =
     questionMode === "relationship"
-      ? `${input.displayName.split(" ")[0]}, the clearest answer is to trust what the other person's consistency is already showing you instead of waiting for a dramatic signal.`
+      ? `${displayNameToFirstName(input.displayName)}, the clearest answer is to trust the consistency you can verify, especially while ${pressure} is amplifying the emotional stakes.`
       : questionMode === "decision"
-        ? `${input.displayName.split(" ")[0]}, the better path is the option that reduces confusion fastest and gives you something concrete to verify within a week.`
-        : `${input.displayName.split(" ")[0]}, treat this question as a cue to slow down and read the pattern in front of you rather than the fantasy around it.`;
+        ? `${displayNameToFirstName(input.displayName)}, the better path is the option that reduces confusion fastest and gives you something concrete to verify while ${pressure} is active.`
+        : `${displayNameToFirstName(input.displayName)}, treat this question as a cue to slow down and read the pattern in front of you through ${pressure}, not through hope alone.`;
   const secondSentence = input.hasChart
     ? `**Your move:** ask for one clear next step, one date, or one observable behavior, then decide from what actually comes back.`
     : `**Your move:** finish your chart setup, then write the question in one sentence so the next read can stay specific.`;
@@ -940,6 +1513,7 @@ function buildStarScopeCopy(input: { displayName: string; hasChart: boolean; que
 }
 
 function buildLoveScopeCopy(input: {
+  chart: ChartPayload | null;
   displayName: string;
   hasChart: boolean;
   partnerBirthDate: string | null;
@@ -948,19 +1522,727 @@ function buildLoveScopeCopy(input: {
   situation: string;
 }) {
   const closeness = classifyRelationship(input.relationshipType, input.situation);
+  const moon = input.chart?.bigThree?.moon ?? "your emotional pattern";
   const firstSentence =
     closeness === "unclear"
-      ? `${input.displayName.split(" ")[0]}, the dynamic with ${input.partnerName} feels emotionally real but structurally under-defined, which is why it can feel intense and unstable at the same time.`
+      ? `${displayNameToFirstName(input.displayName)}, the dynamic with ${input.partnerName} feels emotionally real but structurally under-defined, which presses directly on ${moon}.`
       : closeness === "strained"
-        ? `${input.displayName.split(" ")[0]}, the pattern with ${input.partnerName} looks strained because too much is being carried indirectly and too little is being said in plain terms.`
-        : `${input.displayName.split(" ")[0]}, the bond with ${input.partnerName} has traction, but it grows best when expectations stay explicit and the pace stays honest.`;
+        ? `${displayNameToFirstName(input.displayName)}, the pattern with ${input.partnerName} looks strained because too much is being carried indirectly and ${moon} needs cleaner terms.`
+        : `${displayNameToFirstName(input.displayName)}, the bond with ${input.partnerName} has traction, but ${moon} grows best when expectations stay explicit and the pace stays honest.`;
   const specificity = input.partnerBirthDate ? "Use the extra context to stay precise, not sentimental." : "You have enough context to act clearly without over-interpreting the gaps.";
   const secondSentence = input.hasChart
-    ? `**Your move:** ${specificity} Name one boundary, one need, or one invitation you can communicate directly this week.`
+    ? `**Your move:** ${specificity.replace(/\.$/, ",")} then name one boundary, one need, or one invitation you can communicate directly this week.`
     : `**Your move:** finish your chart setup, then define the relationship in plain terms before asking for more from it.`;
   const content = `${firstSentence} ${secondSentence}`;
   assertValidPremiumCopy(content);
   return content;
+}
+
+function resolveStudioForecastTimeframe(
+  readingType: StudioReadRequest["readingType"]
+): ForecastTimeframe | null {
+  if (readingType === "daily" || readingType === "weekly" || readingType === "monthly") {
+    return readingType;
+  }
+
+  return null;
+}
+
+function buildStudioReadingResult(input: {
+  audience: NonNullable<StudioReadRequest["audience"]>;
+  chart: Awaited<ReturnType<typeof buildAstrologyChartSnapshot>>;
+  forecast: string;
+  label: string;
+  question: string;
+  readingType: StudioReadRequest["readingType"];
+}): StudioReadingResult {
+  const chartPayload = normalizeChartPayload(input.chart.chart as Record<string, unknown>);
+  const sun = chartPayload?.bigThree?.sun ?? "Sun";
+  const moon = chartPayload?.bigThree?.moon ?? "Moon";
+  const rising = chartPayload?.bigThree?.rising ?? "Rising";
+  const subject = input.label.trim() || "the member";
+  const angle = buildAudienceAngle(input.audience, sun, moon, rising);
+  const adHooks = buildAdHooks(input.readingType, subject, sun, moon, rising);
+  const ctaIdeas = buildCtaIdeas(input.readingType);
+  const moduleFit = buildModuleFit(input.readingType);
+  const voiceReading = buildStudioVoiceReading({
+    chartSummary: input.chart.summary,
+    forecast: input.forecast,
+    question: input.question,
+    readingType: input.readingType
+  });
+
+  return {
+    chartSummary: `${input.chart.summary} ${angle}`,
+    ctaIdeas,
+    forecast: input.forecast,
+    hooks: adHooks,
+    marketingVariants: [
+      `${subject} is not looking for generic reassurance. ${sun}, ${moon}, and ${rising} together make the stronger promise: a reading precise enough to feel personal.`,
+      `Built from exact birth data, this CosmoScope read translates ${sun} drive, ${moon} feeling, and ${rising} presentation into language people can actually use.`,
+      `When the day feels noisy, CosmoScope narrows the signal. It gives ${subject} the pattern, the pressure point, and the next move without turning the moment into theater.`
+    ],
+    moduleFit,
+    notes: `Best used for ${moduleFit.join(", ")}. Audience frame: ${input.audience.replace(/_/g, " ")}. ${input.question ? `Context entered: ${input.question}` : "No extra context entered."}`,
+    voiceReading
+  };
+}
+
+function buildStudioVoiceReading(input: {
+  chartSummary: string;
+  forecast: string;
+  question: string;
+  readingType: StudioReadRequest["readingType"];
+}) {
+  const intro =
+    input.readingType === "social_post" || input.readingType === "ad_copy" || input.readingType === "landing_page_copy"
+      ? input.forecast
+      : `${input.chartSummary}\n\n${input.forecast}`;
+
+  if (input.readingType === "ad_copy" || input.readingType === "landing_page_copy" || input.readingType === "social_post") {
+    return intro;
+  }
+
+  return `${intro}${input.question ? `\n\nContext: ${input.question}.` : ""}\n\n**Your move:** use the clearest pressure point in this read as the single thing you respond to first.`;
+}
+
+function buildAudienceAngle(audience: NonNullable<StudioReadRequest["audience"]>, sun: string, moon: string, rising: string) {
+  const label = audience.replace(/_/g, " ");
+  return `For a ${label} audience, the strongest frame is the contrast between ${sun} direction, ${moon} feeling, and ${rising} presentation.`;
+}
+
+function buildAdHooks(
+  readingType: StudioReadRequest["readingType"],
+  subject: string,
+  sun: string,
+  moon: string,
+  rising: string
+) {
+  const base = [
+    `Exact birth data. A reading that sounds like ${subject}, not everyone else.`,
+    `${sun}, ${moon}, and ${rising} are not trivia. They are the pattern underneath the noise.`,
+    `When the day gets louder, CosmoScope gives the signal back in plain language.`
+  ];
+
+  if (readingType === "ad_copy" || readingType === "landing_page_copy") {
+    return [
+      ...base,
+      "A private reading built from exact data, with enough precision to change what you do next."
+    ];
+  }
+
+  return base;
+}
+
+function buildCtaIdeas(readingType: StudioReadRequest["readingType"]) {
+  if (readingType === "ad_copy" || readingType === "landing_page_copy" || readingType === "social_post") {
+    return ["Open your reading", "See today’s pattern", "Get the chart read back to you"];
+  }
+
+  return ["Stay with the clearest signal first", "Name the pressure point before you react", "Use this reading to choose the next clean move"];
+}
+
+function buildModuleFit(readingType: StudioReadRequest["readingType"]) {
+  if (readingType === "lovescope") {
+    return ["LoveScope", "Cosmic Pass", "email follow-up"];
+  }
+  if (readingType === "starscope") {
+    return ["StarScope", "Cosmic Pass", "push copy"];
+  }
+  if (readingType === "ad_copy" || readingType === "landing_page_copy" || readingType === "social_post") {
+    return ["front door", "paid social", "creator studio"];
+  }
+  return ["daily decoding", "weekly breakdown", "Cosmic Pass"];
+}
+
+function buildStudioMarketingLead(input: {
+  audience: NonNullable<StudioReadRequest["audience"]>;
+  chart: ChartPayload | null;
+  label: string;
+  readingType: StudioReadRequest["readingType"];
+}) {
+  const sun = input.chart?.bigThree?.sun ?? "your Sun";
+  const moon = input.chart?.bigThree?.moon ?? "your Moon";
+  const rising = input.chart?.bigThree?.rising ?? "your Rising";
+  const audience = input.audience.replace(/_/g, " ");
+
+  return `${input.label} does not need a vague horoscope. They need a reading that turns ${sun} direction, ${moon} feeling, and ${rising} presentation into language a ${audience} audience can actually use.`;
+}
+
+type AstrologyInput = {
+  birthDate: string;
+  birthPlace: string;
+  birthTime: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  timezoneOffsetHours: number;
+  unknownBirthTime: boolean;
+};
+
+type AstrologyApiPlanet = {
+  full_degree?: number;
+  is_retro?: boolean | string;
+  name?: string;
+  sign?: string;
+};
+
+type AstrologyApiHouse = {
+  end_degree?: number;
+  house_id?: number;
+  planets?: AstrologyApiPlanet[];
+  sign?: string;
+  start_degree?: number;
+};
+
+type AstrologyApiAspect = {
+  aspecting_planet?: string;
+  aspected_planet?: string;
+  diff?: number;
+  orb?: number;
+  type?: string;
+};
+
+type AstrologyApiChartDataResponse = {
+  aspects?: AstrologyApiAspect[];
+  houses?: AstrologyApiHouse[];
+};
+
+type AstrologyApiTransitRelation = {
+  aspect_type?: string;
+  end_time?: string;
+  exact_time?: string;
+  is_retrograde?: boolean;
+  natal_house?: number;
+  natal_planet?: string;
+  planet_in_signs?: string[];
+  transit_planet?: string;
+  transit_sign?: string;
+};
+
+type AstrologyApiDailyTransitResponse = {
+  ascendant?: string;
+  transit_date?: string;
+  transit_relation?: AstrologyApiTransitRelation[];
+};
+
+type AstrologyApiWeeklyTransitResponse = {
+  end_date?: string;
+  natal_ascendant?: string;
+  start_date?: string;
+  transit_relation?: AstrologyApiTransitRelation[];
+};
+
+type AstrologyApiLifeForecastResponse = {
+  life_forecast?: Array<{
+    date?: string;
+    forecast?: string;
+    planet_position?: string;
+  }>;
+};
+
+function mergeChartWithTransit(
+  chart: Record<string, unknown>,
+  dominantTransit: TransitSignal | null
+) {
+  if (!dominantTransit) {
+    return chart;
+  }
+
+  return {
+    ...chart,
+    dominantTransit
+  };
+}
+
+function resolveAstrologyProfileInput(input: {
+  birthDate: string | null;
+  birthPlace: string | null;
+  birthTime: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string | null;
+  timezoneOffset: number | null;
+  unknownBirthTime: boolean;
+}): AstrologyInput {
+  const birthDate = requireDateString(input.birthDate, "birthDate");
+  const birthTime = input.unknownBirthTime ? "12:00" : requireTimeString(input.birthTime, "birthTime");
+  const latitude = requireFiniteNumber(input.latitude, "latitude");
+  const longitude = requireFiniteNumber(input.longitude, "longitude");
+  const timezone = input.timezone?.trim() || "UTC";
+  const timezoneOffsetHours =
+    typeof input.timezoneOffset === "number" && Number.isFinite(input.timezoneOffset)
+      ? input.timezoneOffset
+      : getTimezoneOffsetMinutes(timezone, zonedLocalTimeToUtc(birthDate, birthTime, timezone)) / 60;
+
+  return {
+    birthDate,
+    birthPlace: requireString(input.birthPlace ?? undefined, "birthPlace"),
+    birthTime,
+    latitude,
+    longitude,
+    timezone,
+    timezoneOffsetHours,
+    unknownBirthTime: input.unknownBirthTime
+  };
+}
+
+async function buildAstrologyChartSnapshot(env: Env, input: AstrologyInput, displayName: string) {
+  const chartResponse = await callAstrologyApi<AstrologyApiChartDataResponse>(env, "western_chart_data", {
+    ...toAstrologyApiPayload(input),
+    house_type: input.unknownBirthTime ? "whole_sign" : "placidus"
+  });
+
+  const normalizedChart = normalizeAstrologyChart(chartResponse, input);
+  const sun = normalizedChart.bigThree?.sun ?? "your core pattern";
+  const moon = normalizedChart.bigThree?.moon ?? "your emotional pattern";
+  const rising = normalizedChart.bigThree?.rising ?? "your public presentation";
+  const summary = `${displayNameToFirstName(displayName)}'s chart centers on ${sun} drive, ${moon} emotional timing, and ${rising} presentation. Together, these placements show how they pursue what matters, how they react under pressure, and how other people read them before much is explained.`;
+
+  return {
+    chart: normalizedChart,
+    sourceVersion: CHART_SOURCE_VERSION,
+    summary
+  };
+}
+
+async function fetchDominantTransitSignal(
+  env: Env,
+  input: AstrologyInput,
+  mode: "daily" | "weekly" | "long_range"
+): Promise<TransitSignal | null> {
+  if (mode === "daily") {
+    const response = await callAstrologyApi<AstrologyApiDailyTransitResponse>(env, "natal_transits/daily", {
+      ...toAstrologyApiPayload(input),
+      house_type: input.unknownBirthTime ? "whole_sign" : "placidus"
+    });
+    return selectTransitSignal(response.transit_relation ?? [], input);
+  }
+
+  if (mode === "weekly") {
+    const response = await callAstrologyApi<AstrologyApiWeeklyTransitResponse>(env, "natal_transits/weekly", {
+      ...toAstrologyApiPayload(input),
+      house_type: input.unknownBirthTime ? "whole_sign" : "placidus"
+    });
+    return selectTransitSignal(response.transit_relation ?? [], input);
+  }
+
+  const response = await callAstrologyApi<AstrologyApiLifeForecastResponse>(env, "life_forecast_report/tropical", {
+    ...toAstrologyApiPayload(input),
+    house_type: input.unknownBirthTime ? "whole_sign" : "placidus"
+  });
+  return selectTransitSignalFromLifeForecast(response.life_forecast ?? [], input);
+}
+
+function toAstrologyApiPayload(input: AstrologyInput) {
+  const [year, month, day] = input.birthDate.split("-").map(Number);
+  const [hour, minute] = input.birthTime.split(":").map(Number);
+  return {
+    day,
+    hour,
+    lat: input.latitude,
+    lon: input.longitude,
+    min: minute,
+    month,
+    tzone: input.timezoneOffsetHours,
+    year
+  };
+}
+
+async function callAstrologyApi<TResponse>(env: Env, endpoint: string, payload: Record<string, unknown>): Promise<TResponse> {
+  const rawKey = env.ASTROLOGY_API_KEY?.trim();
+  if (!rawKey) {
+    throw new HttpError(503, "Astrology API is not configured yet.");
+  }
+
+  const headers: Record<string, string> = rawKey.includes(":")
+    ? {
+        authorization: `Basic ${btoa(rawKey)}`,
+        "content-type": "application/json"
+      }
+    : {
+        "content-type": "application/json",
+        "x-astrologyapi-key": rawKey
+      };
+
+  const response = await fetch(`https://json.astrologyapi.com/v1/${endpoint}`, {
+    body: JSON.stringify(payload),
+    headers,
+    method: "POST"
+  });
+  const result = (await response.json().catch(() => null)) as TResponse | { message?: string; error?: string } | null;
+
+  if (!response.ok || !result) {
+    throw new HttpError(response.status || 502, `Astrology API request failed for ${endpoint}.`, result);
+  }
+
+  return result as TResponse;
+}
+
+function normalizeAstrologyChart(response: AstrologyApiChartDataResponse, input: AstrologyInput) {
+  const houses = (response.houses ?? []).filter((house): house is AstrologyApiHouse => Boolean(house.house_id));
+  const flattenedPlanets = flattenAstrologyPlanets(houses);
+  const sun = flattenedPlanets.find((planet) => planet.body === "Sun");
+  const moon = flattenedPlanets.find((planet) => planet.body === "Moon");
+  const firstHouse = houses.find((house) => house.house_id === 1);
+  const tenthHouse = houses.find((house) => house.house_id === 10);
+
+  return {
+    accuracy: {
+      engine: "astrologyapi",
+      houses: input.unknownBirthTime ? "whole_sign_no_exact_birth_time" : "placidus_from_astrologyapi",
+      planets: "western_chart_data"
+    },
+    bigThree: {
+      moon: moon?.sign,
+      rising: input.unknownBirthTime ? undefined : firstHouse?.sign,
+      sun: sun?.sign
+    },
+    birth: {
+      date: input.birthDate,
+      instantUtc: zonedLocalTimeToUtc(input.birthDate, input.birthTime, input.timezone).toISOString(),
+      latitude: input.latitude,
+      longitude: input.longitude,
+      place: input.birthPlace,
+      time: input.birthTime,
+      timezone: input.timezone,
+      unknownBirthTime: input.unknownBirthTime
+    },
+    dominantTransit: undefined,
+    planets: flattenedPlanets,
+    transits: [],
+    wheel: {
+      ascendant:
+        firstHouse?.start_degree !== undefined
+          ? degreePayload(firstHouse.start_degree)
+          : null,
+      midheaven:
+        tenthHouse?.start_degree !== undefined
+          ? degreePayload(tenthHouse.start_degree)
+          : null
+    }
+  };
+}
+
+function flattenAstrologyPlanets(houses: AstrologyApiHouse[]): Placement[] {
+  const seen = new Set<string>();
+  const planets: Placement[] = [];
+
+  for (const house of houses) {
+    for (const planet of house.planets ?? []) {
+      const body = planet.name?.trim();
+      const degree = typeof planet.full_degree === "number" ? planet.full_degree : null;
+      const sign = planet.sign?.trim();
+      if (!body || degree === null || !sign || seen.has(body)) {
+        continue;
+      }
+
+      seen.add(body);
+      planets.push({
+        body,
+        degree: roundDegree(degree),
+        degreeInSign: roundDegree(normalizeDegrees(degree) % 30),
+        retrograde: planet.is_retro === true || planet.is_retro === "true",
+        sign
+      });
+    }
+  }
+
+  return planets.sort((left, right) => left.degree - right.degree);
+}
+
+function selectTransitSignal(relations: AstrologyApiTransitRelation[], input: AstrologyInput): TransitSignal | null {
+  const chart = relations
+    .map((relation) => {
+      const transitBody = relation.transit_planet?.trim();
+      const natalBody = relation.natal_planet?.trim();
+      const transitSign = relation.transit_sign?.trim();
+      if (!transitBody || !natalBody || !transitSign) {
+        return null;
+      }
+
+      const weight = transitPriority(transitBody);
+      const exactness = relation.exact_time && relation.exact_time !== "-" ? exactnessScore(relation.exact_time) : 0;
+      return {
+        aspect: relation.aspect_type?.trim() || "Aspect",
+        exactness,
+        natalBody,
+        natalSign: inferNatalSignForBody(input, natalBody),
+        orb: 0,
+        transitBody,
+        transitSign,
+        weight: weight + exactness
+      };
+    })
+    .filter((value): value is TransitSignal & { weight: number } => Boolean(value))
+    .sort((left, right) => right.weight - left.weight);
+
+  if (!chart.length) {
+    return null;
+  }
+
+  const { weight: _weight, ...signal } = chart[0];
+  return signal;
+}
+
+function selectTransitSignalFromLifeForecast(
+  forecasts: Array<{ date?: string; forecast?: string; planet_position?: string }>,
+  input: AstrologyInput
+): TransitSignal | null {
+  for (const item of forecasts) {
+    const match = item.planet_position?.match(/^Transiting\s+(.+?)\s+([A-Za-z ]+)\s+Natal\s+(.+)$/i);
+    if (!match) {
+      continue;
+    }
+
+    const transitBody = match[1]?.trim();
+    const aspect = match[2]?.trim();
+    const natalBody = match[3]?.trim();
+    if (!transitBody || !aspect || !natalBody) {
+      continue;
+    }
+
+    return {
+      aspect,
+      exactness: 0,
+      natalBody,
+      natalSign: inferNatalSignForBody(input, natalBody),
+      orb: 0,
+      transitBody,
+      transitSign: "current sky"
+    };
+  }
+
+  return null;
+}
+
+function transitPriority(body: string) {
+  const order = ["Pluto", "Neptune", "Uranus", "Saturn", "Jupiter", "Mars", "Venus", "Mercury", "Sun", "Moon"];
+  const index = order.indexOf(body);
+  return index === -1 ? 0 : order.length - index;
+}
+
+function exactnessScore(exactTime: string) {
+  const parsed = new Date(exactTime.replace(" ", "T") + "Z");
+  if (Number.isNaN(parsed.getTime())) {
+    return 0;
+  }
+
+  const deltaHours = Math.abs(Date.now() - parsed.getTime()) / 36e5;
+  return Math.max(0, 24 - Math.min(24, deltaHours));
+}
+
+function inferNatalSignForBody(input: AstrologyInput, natalBody: string) {
+  return natalBody === "Ascendant" && !input.unknownBirthTime ? "Ascendant" : natalBody;
+}
+
+function buildPlanetSet(date: Date): Placement[] {
+  return ASTROLOGY_BODIES.map((body) => {
+    const longitude = getBodyLongitude(body, date);
+    const yesterday = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+    const previousLongitude = getBodyLongitude(body, yesterday);
+    return {
+      body,
+      ...degreePayload(longitude),
+      retrograde: signedLongitudeDelta(previousLongitude, longitude) < 0
+    };
+  });
+}
+
+function getBodyLongitude(body: Astronomy.Body, date: Date) {
+  if (body === Astronomy.Body.Moon) {
+    return normalizeDegrees(Astronomy.EclipticGeoMoon(date).lon);
+  }
+
+  return normalizeDegrees(Astronomy.Ecliptic(Astronomy.GeoVector(body, date, true)).elon);
+}
+
+function degreePayload(longitude: number) {
+  const normalized = normalizeDegrees(longitude);
+  const zodiac = zodiacAt(normalized);
+  return {
+    degree: roundDegree(normalized),
+    degreeInSign: roundDegree(zodiac.degreeInSign),
+    sign: zodiac.sign
+  };
+}
+
+function zodiacAt(longitude: number) {
+  const normalized = normalizeDegrees(longitude);
+  const signIndex = Math.floor(normalized / 30) % 12;
+  return {
+    degreeInSign: normalized - signIndex * 30,
+    sign: ZODIAC_SIGNS[signIndex]
+  };
+}
+
+function findStrongestTransit(natalPlanets: Placement[], transits: Placement[]): TransitSignal {
+  const aspectAngles = [
+    { aspect: "conjunction", angle: 0, weight: 1 },
+    { aspect: "opposition", angle: 180, weight: 0.95 },
+    { aspect: "square", angle: 90, weight: 0.9 },
+    { aspect: "trine", angle: 120, weight: 0.8 },
+    { aspect: "sextile", angle: 60, weight: 0.68 }
+  ];
+  let strongest: TransitSignal | null = null;
+  let strongestScore = Number.POSITIVE_INFINITY;
+
+  for (const transit of transits.filter((item) => item.body !== "Moon")) {
+    for (const natal of natalPlanets) {
+      const separation = angularSeparation(transit.degree, natal.degree);
+      for (const aspect of aspectAngles) {
+        const orb = Math.abs(separation - aspect.angle);
+        const allowedOrb = ["Sun", "Moon"].includes(natal.body) ? 6 : 4;
+        if (orb <= allowedOrb) {
+          const score = orb / aspect.weight;
+          if (score < strongestScore) {
+            strongestScore = score;
+            strongest = {
+              aspect: aspect.aspect,
+              exactness: roundDegree(allowedOrb - orb),
+              natalBody: natal.body,
+              natalSign: natal.sign,
+              orb: roundDegree(orb),
+              transitBody: transit.body,
+              transitSign: transit.sign
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return (
+    strongest ?? {
+      aspect: "proximity",
+      exactness: 0,
+      natalBody: natalPlanets[0]?.body ?? "Sun",
+      natalSign: natalPlanets[0]?.sign ?? "Aries",
+      orb: 0,
+      transitBody: transits[0]?.body ?? "Sun",
+      transitSign: transits[0]?.sign ?? "Aries"
+    }
+  );
+}
+
+function calculateAscendantLongitude(date: Date, latitude: number, longitude: number) {
+  const obliquity = 23.4392911 * Astronomy.DEG2RAD;
+  const localSidereal = normalizeDegrees(Astronomy.SiderealTime(date) * 15 + longitude) * Astronomy.DEG2RAD;
+  const latitudeRad = latitude * Astronomy.DEG2RAD;
+  const ascendant = Math.atan2(
+    -Math.cos(localSidereal),
+    Math.sin(localSidereal) * Math.cos(obliquity) + Math.tan(latitudeRad) * Math.sin(obliquity)
+  );
+
+  return normalizeDegrees(ascendant * Astronomy.RAD2DEG);
+}
+
+function calculateMidheavenLongitude(date: Date, longitude: number) {
+  const obliquity = 23.4392911 * Astronomy.DEG2RAD;
+  const localSidereal = normalizeDegrees(Astronomy.SiderealTime(date) * 15 + longitude) * Astronomy.DEG2RAD;
+  const midheaven = Math.atan2(Math.sin(localSidereal), Math.cos(localSidereal) * Math.cos(obliquity));
+  return normalizeDegrees(midheaven * Astronomy.RAD2DEG);
+}
+
+function zonedLocalTimeToUtc(date: string, time: string, timezone: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  let utcMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+
+  for (let index = 0; index < 2; index += 1) {
+    const offset = getTimezoneOffsetMinutes(timezone, new Date(utcMs));
+    utcMs = Date.UTC(year, month - 1, day, hour, minute, 0) - offset * 60_000;
+  }
+
+  return new Date(utcMs);
+}
+
+function getTimezoneOffsetMinutes(timezone: string, date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone: timezone,
+    year: "numeric"
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(lookup.year),
+    Number(lookup.month) - 1,
+    Number(lookup.day),
+    Number(lookup.hour === "24" ? "0" : lookup.hour),
+    Number(lookup.minute),
+    Number(lookup.second)
+  );
+
+  return (asUtc - date.getTime()) / 60_000;
+}
+
+function normalizeChartPayload(value: Record<string, unknown> | undefined): ChartPayload | null {
+  if (!value) {
+    return null;
+  }
+
+  return value as ChartPayload;
+}
+
+function requirePlacement(planets: Placement[], body: string) {
+  const placement = planets.find((planet) => planet.body === body);
+  if (!placement) {
+    throw new HttpError(500, `Unable to calculate ${body} placement.`);
+  }
+  return placement;
+}
+
+function requireDateString(value: string | null, field: string) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new HttpError(400, `${field} must use YYYY-MM-DD format.`);
+  }
+
+  return value;
+}
+
+function requireTimeString(value: string | null, field: string) {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) {
+    throw new HttpError(400, `${field} must use HH:MM format.`);
+  }
+
+  return value;
+}
+
+function requireFiniteNumber(value: number | null, field: string) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new HttpError(400, `${field} is required for an accurate chart.`);
+  }
+
+  return value;
+}
+
+function normalizeDegrees(value: number) {
+  return ((value % 360) + 360) % 360;
+}
+
+function angularSeparation(first: number, second: number) {
+  const diff = Math.abs(normalizeDegrees(first) - normalizeDegrees(second));
+  return diff > 180 ? 360 - diff : diff;
+}
+
+function signedLongitudeDelta(previous: number, current: number) {
+  const diff = normalizeDegrees(current) - normalizeDegrees(previous);
+  if (diff > 180) {
+    return diff - 360;
+  }
+  if (diff < -180) {
+    return diff + 360;
+  }
+  return diff;
+}
+
+function roundDegree(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 function getEffectiveDate(timeframe: ForecastTimeframe) {
@@ -973,6 +2255,9 @@ function getEffectiveDate(timeframe: ForecastTimeframe) {
     const distance = day === 0 ? 6 : day - 1;
     const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - distance));
     return monday.toISOString().slice(0, 10);
+  }
+  if (timeframe === "yearly") {
+    return `${now.getUTCFullYear()}-01-01`;
   }
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
 }
@@ -990,7 +2275,11 @@ function stableHash(input: string) {
   return hash;
 }
 
-function hasProductAccess(entitlements: EntitlementsRow, productKey: ProductKey) {
+function hasProductAccess(env: Env, entitlements: EntitlementsRow, productKey: ProductKey) {
+  if (env.PAYMENTS_DISABLED_PREVIEW === "true") {
+    return true;
+  }
+
   if (entitlements.premium_active) {
     return true;
   }
@@ -1001,6 +2290,14 @@ function hasProductAccess(entitlements: EntitlementsRow, productKey: ProductKey)
 
   if (productKey === "lovescope_unlock") {
     return entitlements.lovescope_unlocked;
+  }
+
+  if (productKey === "forecast_monthly") {
+    return entitlements.forecast_monthly_unlocked;
+  }
+
+  if (productKey === "yearly_blueprint") {
+    return entitlements.yearly_blueprint_unlocked;
   }
 
   return false;
@@ -1166,6 +2463,70 @@ function resolveActiveUntil(current: string | null, incoming: string | null) {
   return new Date(incoming).getTime() >= new Date(current).getTime() ? incoming : current;
 }
 
+async function resolveStripePriceId(env: Env, lookupKey: string) {
+  const params = new URLSearchParams();
+  params.set("active", "true");
+  params.append("lookup_keys[]", lookupKey);
+  const response = await fetch(`https://api.stripe.com/v1/prices?${params.toString()}`, {
+    headers: {
+      authorization: `Bearer ${env.STRIPE_SECRET_KEY ?? ""}`
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | { data?: Array<{ id: string }> }
+    | { error?: { message?: string } }
+    | null;
+
+  const priceId = payload && "data" in payload ? payload.data?.[0]?.id ?? null : null;
+  if (!response.ok || !priceId) {
+    throw new HttpError(response.status || 502, `Stripe price lookup failed for ${lookupKey}.`, payload);
+  }
+
+  return priceId;
+}
+
+async function fetchStripeCheckoutSession(env: Env, sessionId: string) {
+  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+    headers: {
+      authorization: `Bearer ${env.STRIPE_SECRET_KEY ?? ""}`
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        client_reference_id?: string | null;
+        created?: number;
+        metadata?: Record<string, string>;
+        payment_status?: string;
+        subscription?: string | null;
+      }
+    | { error?: { message?: string } }
+    | null;
+
+  if (!response.ok || !payload || !("payment_status" in payload)) {
+    throw new HttpError(response.status || 502, "Unable to load the Stripe checkout session.", payload);
+  }
+
+  return payload;
+}
+
+async function fetchStripeSubscription(env: Env, subscriptionId: string) {
+  const response = await fetch(`https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    headers: {
+      authorization: `Bearer ${env.STRIPE_SECRET_KEY ?? ""}`
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | { current_period_end?: number; status?: string }
+    | { error?: { message?: string } }
+    | null;
+
+  if (!response.ok || !payload || !("status" in payload)) {
+    throw new HttpError(response.status || 502, "Unable to load the Stripe subscription.", payload);
+  }
+
+  return payload;
+}
+
 function assertSupabaseEnv(env: Env) {
   for (const key of ["SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"] as const) {
     if (!env[key]) {
@@ -1174,11 +2535,17 @@ function assertSupabaseEnv(env: Env) {
   }
 }
 
+function assertStripeEnv(env: Env) {
+  if (!env.STRIPE_SECRET_KEY) {
+    throw new HttpError(503, "Stripe is not configured yet.");
+  }
+}
+
 function hasSupabaseEnv(env: Env) {
   return Boolean(env.SUPABASE_ANON_KEY && env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL);
 }
 
-function handleError(error: unknown) {
+function handleError(error: unknown, request: Request, env: Env) {
   if (error instanceof HttpError) {
     return json(
       {
@@ -1186,7 +2553,9 @@ function handleError(error: unknown) {
         error: "request_failed",
         message: error.message
       },
-      { status: error.status }
+      { status: error.status },
+      request,
+      env
     );
   }
 
@@ -1196,14 +2565,16 @@ function handleError(error: unknown) {
       error: "internal_error",
       message: "An unexpected error occurred."
     },
-    { status: 500 }
+    { status: 500 },
+    request,
+    env
   );
 }
 
-function json(payload: unknown, init: ResponseInit = {}) {
+function json(payload: unknown, init: ResponseInit = {}, request?: Request, env?: Env) {
   const headers = new Headers(init.headers);
   headers.set("content-type", "application/json; charset=utf-8");
-  for (const [key, value] of Object.entries(corsHeaders)) {
+  for (const [key, value] of Object.entries(getCorsHeaders(request, env))) {
     headers.set(key, value);
   }
 
@@ -1218,6 +2589,64 @@ function jsonHeaders(apiKey: string) {
     "apikey": apiKey,
     "content-type": "application/json"
   };
+}
+
+function stripeHeaders(env: Env) {
+  return {
+    "authorization": `Bearer ${env.STRIPE_SECRET_KEY ?? ""}`,
+    "content-type": "application/x-www-form-urlencoded"
+  };
+}
+
+function buildFormBody(values: Record<string, string>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value) {
+      params.set(key, value);
+    }
+  }
+  return params.toString();
+}
+
+function getCorsHeaders(request?: Request, env?: Env) {
+  const requestOrigin = request?.headers.get("origin") ?? "";
+  const allowedOrigins = new Set(
+    (env?.CORS_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  );
+
+  if (env?.APP_URL?.trim()) {
+    allowedOrigins.add(env.APP_URL.trim());
+  }
+
+  const accessControlAllowOrigin =
+    allowedOrigins.size > 0
+      ? requestOrigin && allowedOrigins.has(requestOrigin)
+        ? requestOrigin
+        : Array.from(allowedOrigins)[0]
+      : "*";
+
+  return {
+    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-origin": accessControlAllowOrigin,
+    "vary": "Origin"
+  };
+}
+
+function getAppOrigin(request: Request, env: Env) {
+  if (env.APP_URL?.trim()) {
+    return env.APP_URL.trim();
+  }
+
+  const originHeader = request.headers.get("origin");
+  if (originHeader) {
+    return originHeader;
+  }
+
+  return new URL(request.url).origin;
 }
 
 function requireString(value: string | undefined, field: string) {
@@ -1235,6 +2664,27 @@ function requireProductKey(value: string | ProductKey | undefined) {
   }
 
   return normalized as ProductKey;
+}
+
+function describeSignupError(payload: unknown) {
+  const errorCode =
+    typeof payload === "object" && payload !== null && "error_code" in payload ? String((payload as { error_code?: unknown }).error_code) : "";
+  const message =
+    typeof payload === "object" && payload !== null && "msg" in payload ? String((payload as { msg?: unknown }).msg ?? "") : "";
+
+  if (errorCode === "user_already_exists") {
+    return "An account with this email already exists. Log in instead.";
+  }
+
+  if (message.toLowerCase().includes("password")) {
+    return "Choose a stronger password and try again.";
+  }
+
+  if (message.toLowerCase().includes("email")) {
+    return "Check the email address and try again.";
+  }
+
+  return "Unable to sign up.";
 }
 
 async function readJson<T>(request: Request): Promise<T> {
