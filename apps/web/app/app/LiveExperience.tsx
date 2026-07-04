@@ -965,18 +965,18 @@ export function LiveExperience() {
       return;
     }
 
+    setActiveForecast(timeframe);
+    setError(null);
+
     if (!canAccessForecast(timeframe)) {
-      const productKey = checkoutProductForForecast(timeframe);
-      if (productKey) {
-        await beginCheckout(productKey);
-      }
+      setToolStatus(`${forecastLabels[timeframe]} is a premium reading. Use the unlock options below when you are ready.`);
       return;
     }
 
     const birthForForecast = chart?.chart?.birth;
 
     if (!birthForForecast) {
-      setError("Open your chart first, then choose another reading.");
+      setToolStatus("Your chart is open. This reading needs one more refresh before it can load.");
       return;
     }
 
@@ -987,15 +987,30 @@ export function LiveExperience() {
       birthTime?: string;
     };
 
+    const forecastBirthDate = birthForForecastFields.date ?? birthForForecastFields.birthDate;
+    const forecastBirthTime = birthForForecastFields.time ?? birthForForecastFields.birthTime;
+
+    if (
+      !forecastBirthDate ||
+      !forecastBirthTime ||
+      !birthForForecast.place ||
+      birthForForecast.latitude === undefined ||
+      birthForForecast.longitude === undefined ||
+      !birthForForecast.timezone
+    ) {
+      setToolStatus("Your chart is open. This reading needs one more refresh before it can load.");
+      return;
+    }
+
     setToolStatus(`Loading ${timeframe} reading...`);
-    setError(null);
+
     try {
       const response = await request<ForecastResponse>(API_PATHS.forecast, {
         body: JSON.stringify({
           timeframe,
-          birthDate: birthForForecastFields.date ?? birthForForecastFields.birthDate,
+          birthDate: forecastBirthDate,
           birthPlace: birthForForecast.place,
-          birthTime: birthForForecastFields.time ?? birthForForecastFields.birthTime,
+          birthTime: forecastBirthTime,
           latitude: birthForForecast.latitude,
           longitude: birthForForecast.longitude,
           timezone: birthForForecast.timezone,
@@ -1005,12 +1020,13 @@ export function LiveExperience() {
         headers: authHeaders(accessToken),
         method: "POST"
       });
+
       setForecasts((current) => ({ ...current, [timeframe]: response }));
-      setActiveForecast(timeframe);
       setToolStatus(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `Unable to load the ${timeframe} reading.`);
-      setToolStatus(null);
+      console.warn(`${timeframe} forecast did not load.`, caught);
+      setError(null);
+      setToolStatus(`The live ${forecastLabels[timeframe]} did not load, so we are showing the built-in ${forecastLabels[timeframe]} view for now.`);
     }
   }
 
