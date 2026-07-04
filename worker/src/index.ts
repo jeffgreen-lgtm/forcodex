@@ -54,6 +54,7 @@ type SignupPayload = LoginPayload & {
 type SupabaseUser = {
   email?: string;
   id: string;
+  user_metadata?: Record<string, unknown> | null;
 };
 
 type SessionPayload = {
@@ -83,7 +84,7 @@ type EntitlementsRow = {
 };
 
 type ChartRow = {
-  chart_json: Record<string, unknown>;
+  chart_json: unknown;
   chart_summary: string | null;
   created_at: string;
   source_version: string;
@@ -604,17 +605,21 @@ async function handleChart(request: Request, env: Env) {
   assertSupabaseEnv(env);
   const auth = await authenticateRequest(request, env);
   const body = await readJson<ChartRequest>(request);
+  const chartBirthInput = body as ChartRequest & {
+    unknownBirthTime?: boolean;
+  };
   const profileRow = await loadProfile(env, auth.user.id);
+  const metadataBirth = resolveAuthBirthMetadata(auth.user);
   const cachedChart = await loadChart(env, auth.user.id);
   const astrologyInput = resolveAstrologyProfileInput({
-    birthDate: body.birthDate ?? profileRow?.birth_date ?? null,
-    birthPlace: body.birthPlace ?? profileRow?.birth_place ?? null,
-    birthTime: body.birthTime ?? profileRow?.birth_time ?? null,
-    latitude: body.latitude ?? profileRow?.latitude ?? null,
-    longitude: body.longitude ?? profileRow?.longitude ?? null,
-    timezone: body.timezone ?? profileRow?.timezone ?? null,
-    timezoneOffset: body.timezoneOffset ?? profileRow?.timezone_offset ?? null,
-    unknownBirthTime: profileRow?.unknown_birth_time ?? false
+    birthDate: body.birthDate ?? profileRow?.birth_date ?? metadataBirth.birthDate,
+    birthPlace: body.birthPlace ?? profileRow?.birth_place ?? metadataBirth.birthPlace,
+    birthTime: body.birthTime ?? normalizeBirthTimeValue(profileRow?.birth_time) ?? normalizeBirthTimeValue(metadataBirth.birthTime),
+    latitude: body.latitude ?? profileRow?.latitude ?? metadataBirth.latitude,
+    longitude: body.longitude ?? profileRow?.longitude ?? metadataBirth.longitude,
+    timezone: body.timezone ?? profileRow?.timezone ?? metadataBirth.timezone,
+    timezoneOffset: body.timezoneOffset ?? profileRow?.timezone_offset ?? metadataBirth.timezoneOffset,
+    unknownBirthTime: chartBirthInput.unknownBirthTime ?? profileRow?.unknown_birth_time ?? metadataBirth.unknownBirthTime
   });
   const liveTransitSignal = await fetchDominantTransitSignal(env, astrologyInput, "daily");
 
@@ -627,7 +632,11 @@ async function handleChart(request: Request, env: Env) {
     });
   }
 
-  const chart = await buildAstrologyChartSnapshot(env, astrologyInput, profileRow?.display_name ?? auth.user.email ?? "Member");
+  const chart = await buildAstrologyChartSnapshot(
+    env,
+    astrologyInput,
+    resolveMemberDisplayName({ profile: profileRow, user: auth.user })
+  );
 
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/natal_charts`, {
     body: JSON.stringify({
@@ -699,16 +708,20 @@ async function handleForecast(request: Request, env: Env) {
 
   const profile = await loadProfile(env, auth.user.id);
   const chart = await loadChart(env, auth.user.id);
-  const displayName = profile?.display_name ?? auth.user.email ?? "Member";
+  const metadataBirth = resolveAuthBirthMetadata(auth.user);
+  const displayName = resolveMemberDisplayName({ profile, user: auth.user });
   const astrologyInput = resolveAstrologyProfileInput({
-    birthDate: forecastBirthInput.birthDate ?? profile?.birth_date ?? null,
-    birthPlace: forecastBirthInput.birthPlace ?? profile?.birth_place ?? null,
-    birthTime: forecastBirthInput.birthTime ?? profile?.birth_time ?? null,
-    latitude: forecastBirthInput.latitude ?? profile?.latitude ?? null,
-    longitude: forecastBirthInput.longitude ?? profile?.longitude ?? null,
-    timezone: forecastBirthInput.timezone ?? profile?.timezone ?? null,
-    timezoneOffset: forecastBirthInput.timezoneOffset ?? profile?.timezone_offset ?? null,
-    unknownBirthTime: forecastBirthInput.unknownBirthTime ?? profile?.unknown_birth_time ?? false
+    birthDate: forecastBirthInput.birthDate ?? profile?.birth_date ?? metadataBirth.birthDate,
+    birthPlace: forecastBirthInput.birthPlace ?? profile?.birth_place ?? metadataBirth.birthPlace,
+    birthTime:
+      forecastBirthInput.birthTime ??
+      normalizeBirthTimeValue(profile?.birth_time) ??
+      normalizeBirthTimeValue(metadataBirth.birthTime),
+    latitude: forecastBirthInput.latitude ?? profile?.latitude ?? metadataBirth.latitude,
+    longitude: forecastBirthInput.longitude ?? profile?.longitude ?? metadataBirth.longitude,
+    timezone: forecastBirthInput.timezone ?? profile?.timezone ?? metadataBirth.timezone,
+    timezoneOffset: forecastBirthInput.timezoneOffset ?? profile?.timezone_offset ?? metadataBirth.timezoneOffset,
+    unknownBirthTime: forecastBirthInput.unknownBirthTime ?? profile?.unknown_birth_time ?? metadataBirth.unknownBirthTime
   });
   const normalizedChart = normalizeChartPayload(chart?.chart_json);
   const dominantTransit = await fetchDominantTransitSignal(
@@ -893,7 +906,7 @@ async function handleStarScope(request: Request, env: Env) {
   const chart = await loadChart(env, auth.user.id);
   const content = buildStarScopeCopy({
     chart: normalizeChartPayload(chart?.chart_json),
-    displayName: profile?.display_name ?? auth.user.email ?? "Member",
+    displayName: resolveMemberDisplayName({ profile, user: auth.user }),
     hasChart: Boolean(chart),
     question
   });
@@ -924,7 +937,7 @@ async function handleLoveScope(request: Request, env: Env) {
   const chart = await loadChart(env, auth.user.id);
   const content = buildLoveScopeCopy({
     chart: normalizeChartPayload(chart?.chart_json),
-    displayName: profile?.display_name ?? auth.user.email ?? "Member",
+    displayName: resolveMemberDisplayName({ profile, user: auth.user }),
     hasChart: Boolean(chart),
     partnerBirthDate: body.partnerBirthDate ?? null,
     partnerName,
@@ -1091,7 +1104,27 @@ async function handleSignup(request: Request, env: Env) {
   const displayName = body.displayName?.trim() || email.split("@")[0];
 
   const response = await fetch(`${env.SUPABASE_URL}/auth/v1/signup`, {
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      data: {
+        birthDate: body.birthDate ?? null,
+        birthPlace: body.birthPlace ?? null,
+        birthTime: body.birthTime ?? null,
+        birth_date: body.birthDate ?? null,
+        birth_place: body.birthPlace ?? null,
+        birth_time: body.birthTime ?? null,
+        display_name: displayName,
+        first_name: displayNameToFirstName(displayName),
+        latitude: body.latitude ?? null,
+        longitude: body.longitude ?? null,
+        timezone: body.timezone ?? null,
+        timezoneOffset: body.timezoneOffset ?? null,
+        timezone_offset: body.timezoneOffset ?? null,
+        unknownBirthTime: body.unknownBirthTime ?? false,
+        unknown_birth_time: body.unknownBirthTime ?? false
+      },
+      email,
+      password
+    }),
     headers: jsonHeaders(env.SUPABASE_ANON_KEY),
     method: "POST"
   });
@@ -1206,7 +1239,7 @@ async function loadProfile(env: Env, userId: string) {
   if (!response.ok) {
     throw new HttpError(response.status, "Unable to load the cached profile.", payload);
   }
-  return payload as ProfileRow;
+  return firstSupabaseRow<ProfileRow>(payload);
 }
 
 async function loadEntitlements(env: Env, token: string) {
@@ -1278,7 +1311,7 @@ async function loadChart(env: Env, userId: string) {
   if (!response.ok) {
     throw new HttpError(response.status, "Unable to load the cached natal chart.", payload);
   }
-  return payload as ChartRow;
+  return firstSupabaseRow<ChartRow>(payload);
 }
 
 async function loadForecast(
@@ -1323,6 +1356,18 @@ function normalizeAuthPayload(payload: SupabaseAuthPayload) {
     },
     user
   };
+}
+
+function firstSupabaseRow<TRow>(payload: unknown): TRow | null {
+  if (Array.isArray(payload)) {
+    return (payload[0] as TRow | undefined) ?? null;
+  }
+
+  if (payload && typeof payload === "object") {
+    return payload as TRow;
+  }
+
+  return null;
 }
 
 function asProductKey(value: string | null): ProductKey | null {
@@ -1437,15 +1482,40 @@ type Placement = {
   sign: string;
 };
 
+type DegreePoint = {
+  degree: number;
+  degreeInSign: number;
+  sign: string;
+};
+
 type ChartPayload = {
+  accuracy?: {
+    engine?: string;
+    houses?: string;
+    planets?: string;
+  };
   bigThree?: {
     moon?: string;
     rising?: string;
     sun?: string;
   };
+  birth?: {
+    date?: string;
+    instantUtc?: string;
+    latitude?: number;
+    longitude?: number;
+    place?: string;
+    time?: string;
+    timezone?: string;
+    unknownBirthTime?: boolean;
+  };
   dominantTransit?: TransitSignal;
   planets?: Placement[];
   transits?: Placement[];
+  wheel?: {
+    ascendant?: DegreePoint | null;
+    midheaven?: DegreePoint | null;
+  };
 };
 
 type TransitSignal = {
@@ -1468,6 +1538,73 @@ function displayNameToFirstName(value: string) {
     .join(" ");
 
   return cleaned.split(" ")[0] || "Member";
+}
+
+function resolveMemberDisplayName(input: { profile: ProfileRow | null; user: SupabaseUser }) {
+  const metadata = input.user.user_metadata;
+  const candidate =
+    normalizeDisplayNameCandidate(input.profile?.display_name) ??
+    normalizeDisplayNameCandidate(readMetadataString(metadata, "display_name")) ??
+    normalizeDisplayNameCandidate(readMetadataString(metadata, "full_name")) ??
+    normalizeDisplayNameCandidate(readMetadataString(metadata, "name")) ??
+    normalizeDisplayNameCandidate(readMetadataString(metadata, "first_name"));
+
+  if (candidate) {
+    return candidate;
+  }
+
+  if (input.user.email) {
+    return displayNameToFirstName(input.user.email);
+  }
+
+  return "Member";
+}
+
+function normalizeDisplayNameCandidate(value: string | null | undefined) {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned : null;
+}
+
+function readMetadataString(metadata: Record<string, unknown> | null | undefined, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : null;
+}
+
+function readMetadataNumber(metadata: Record<string, unknown> | null | undefined, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readMetadataBoolean(metadata: Record<string, unknown> | null | undefined, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "boolean" ? value : null;
+}
+
+function resolveAuthBirthMetadata(user: SupabaseUser) {
+  const metadata = user.user_metadata;
+  return {
+    birthDate: readMetadataString(metadata, "birthDate") ?? readMetadataString(metadata, "birth_date"),
+    birthPlace: readMetadataString(metadata, "birthPlace") ?? readMetadataString(metadata, "birth_place"),
+    birthTime: readMetadataString(metadata, "birthTime") ?? readMetadataString(metadata, "birth_time"),
+    latitude: readMetadataNumber(metadata, "latitude"),
+    longitude: readMetadataNumber(metadata, "longitude"),
+    timezone: readMetadataString(metadata, "timezone"),
+    timezoneOffset: readMetadataNumber(metadata, "timezoneOffset") ?? readMetadataNumber(metadata, "timezone_offset"),
+    unknownBirthTime: readMetadataBoolean(metadata, "unknownBirthTime") ?? readMetadataBoolean(metadata, "unknown_birth_time") ?? false
+  };
+}
+
+function normalizeBirthTimeValue(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const cleaned = value.trim();
+  if (/^\d{2}:\d{2}:\d{2}$/.test(cleaned)) {
+    return cleaned.slice(0, 5);
+  }
+
+  return cleaned || null;
 }
 
 const ASTROLOGY_BODIES = [
@@ -1615,19 +1752,27 @@ function readingEngineTransitLine(signal: ChartPayload["dominantTransit"] | unde
   return `${signal.transitBody} in ${signal.transitSign} is pressing on your ${signal.natalBody}, so the day has a specific pressure point: the part of you that wants movement is negotiating with the part of you that needs a more honest container.`;
 }
 
+type ReadingEnginePlacementDescriptor = {
+  label: string;
+  role: "Sun" | "Moon" | "Rising";
+  sign?: string;
+  tone: ReadingEngineSignTone;
+};
+
 function readingEngineNames(input: { chart: ChartPayload | null; displayName: string }) {
   const firstName = displayNameToFirstName(input.displayName);
-  const sun = input.chart?.bigThree?.sun ?? "your Sun";
-  const moon = input.chart?.bigThree?.moon ?? "your Moon";
-  const rising = input.chart?.bigThree?.rising ?? "your Rising";
+  const sun = buildReadingEnginePlacement(input.chart?.bigThree?.sun, "Sun");
+  const moon = buildReadingEnginePlacement(input.chart?.bigThree?.moon, "Moon");
+  const rising = buildReadingEnginePlacement(
+    input.chart?.bigThree?.rising,
+    "Rising",
+    input.chart?.birth?.unknownBirthTime ? "your solar chart horizon" : undefined
+  );
   return {
     firstName,
     moon,
-    moonTone: readingEngineTone(moon),
     rising,
-    risingTone: readingEngineTone(rising),
-    sun,
-    sunTone: readingEngineTone(sun)
+    sun
   };
 }
 
@@ -1636,24 +1781,58 @@ function buildForecastCopy(input: { chart: ChartPayload | null; displayName: str
     return `Your CosmoScope is open, but the chart record is not complete enough for a precise reading yet.\n\nAdd the exact birth date, time, and place so the system can calculate the pattern instead of giving you a generic interpretation.\n\n**Your move:** complete the birth record, then come back for the reading that is actually yours.`;
   }
 
+  if (!hasUsableForecastPlacements(input.chart)) {
+    return `Your CosmoScope chart is saved, but the core placements did not load cleanly enough for a precise reading.\n\nRefresh the chart so the system can read your actual Sun, Moon, and Rising instead of falling back to generic placeholders.\n\n**Your move:** regenerate the chart, then open the forecast again.`;
+  }
+
   const signal = input.chart?.dominantTransit;
-  const { firstName, moon, moonTone, rising, risingTone, sun, sunTone } = readingEngineNames(input);
+  const { firstName, moon, rising, sun } = readingEngineNames(input);
   const transitLine = readingEngineTransitLine(signal);
 
   if (input.timeframe === "daily") {
-    return `${firstName}, today’s signal is not simply “good” or “bad.” It is a pressure pattern. Your ${sun} Sun wants ${sunTone.drive}, but the day works better when that drive is given shape instead of speed. ${transitLine}\n\nYour ${moon} Moon is the body-level clue. It usually needs ${moonTone.need}, so if something feels louder than it should, treat that as information instead of an emergency. The emotional charge is not the instruction; it is the flare that shows you where the system wants care, limits, or a cleaner decision.\n\nYour ${rising} Rising is how the room meets you before you explain yourself. Let ${risingTone.style} lead without turning it into performance. The cleanest use of today is to make your signal easier to read: fewer defensive explanations, fewer rushed commitments, and more attention to the choice that would actually lower the noise.\n\n**Your move:** choose one place where your nervous system wants instant certainty, then slow it down until the next right action becomes obvious.`;
+    return `${firstName}, today’s signal is not simply “good” or “bad.” It is a pressure pattern. ${capitalizeFirst(sun.label)} wants ${sun.tone.drive}, but the day works better when that drive is given shape instead of speed. ${transitLine}\n\n${capitalizeFirst(moon.label)} is the body-level clue. It usually needs ${moon.tone.need}, so if something feels louder than it should, treat that as information instead of an emergency. The emotional charge is not the instruction; it is the flare that shows you where the system wants care, limits, or a cleaner decision.\n\n${capitalizeFirst(rising.label)} is how the room meets you before you explain yourself. Let ${rising.tone.style} lead without turning it into performance. The cleanest use of today is to make your signal easier to read: fewer defensive explanations, fewer rushed commitments, and more attention to the choice that would actually lower the noise.\n\n**Your move:** choose one place where your nervous system wants instant certainty, then slow it down until the next right action becomes obvious.`;
   }
 
   if (input.timeframe === "weekly") {
-    return `This week is not one mood. It is a sequence, and ${firstName}, your best read comes from noticing when the pressure changes form.\n\nEarly in the week, your ${sun} Sun wants ${sunTone.drive}, but the first move should be restraint, not proof. Start by narrowing the field. The task is not to win the whole week at once; it is to stop leaking energy into decisions that do not deserve that much of you.\n\nMidweek brings the sharper signal. ${signal ? `${signal.transitBody} pressing on your ${signal.natalBody} can make urgency sound more convincing than wisdom.` : "The pattern becomes easier to see once the week has created enough friction to reveal it."} This is where your ${moon} Moon needs ${moonTone.need}. If you override that need, the week gets noisier. If you honor it cleanly, you recover leverage.\n\nBy the end of the week, your ${rising} Rising matters more than you may expect. ${risingTone.style} can help you re-enter conversations without dragging the whole emotional weather system behind you. The win is not a dramatic resolution. The win is a cleaner pattern, better timing, and one decision that finally feels structurally honest.\n\n**Your move:** pick the one situation that keeps asking for your attention, then decide whether it needs action, a boundary, or simply less performance from you.`;
+    return `This week is not one mood. It is a sequence, and ${firstName}, your best read comes from noticing when the pressure changes form.\n\nEarly in the week, ${sun.label} wants ${sun.tone.drive}, but the first move should be restraint, not proof. Start by narrowing the field. The task is not to win the whole week at once; it is to stop leaking energy into decisions that do not deserve that much of you.\n\nMidweek brings the sharper signal. ${signal ? `${signal.transitBody} pressing on your ${signal.natalBody} can make urgency sound more convincing than wisdom.` : "The pattern becomes easier to see once the week has created enough friction to reveal it."} This is where ${moon.label} needs ${moon.tone.need}. If you override that need, the week gets noisier. If you honor it cleanly, you recover leverage.\n\nBy the end of the week, ${rising.label} matters more than you may expect. That ${rising.tone.style} can help you re-enter conversations without dragging the whole emotional weather system behind you. The win is not a dramatic resolution. The win is a cleaner pattern, better timing, and one decision that finally feels structurally honest.\n\n**Your move:** pick the one situation that keeps asking for your attention, then decide whether it needs action, a boundary, or simply less performance from you.`;
   }
 
   if (input.timeframe === "monthly") {
-    return `${firstName}, this month is about structure: not the kind that makes life rigid, but the kind that lets your actual life hold more truth without spilling into constant reaction.\n\nYour ${sun} Sun is working through the question of ${sunTone.drive}. That desire is not wrong, but it needs a better container. The first part of the month shows you what has been running on habit, obligation, or old momentum. Pay attention to the places that look functional from the outside but feel expensive on the inside.\n\nThe middle of the month asks for a cleaner relationship with pressure. ${signal ? `${signal.transitBody} in ${signal.transitSign} activating your ${signal.natalBody} can make growth feel urgent, but urgency is not the same thing as readiness.` : "The live transit layer points toward consolidation rather than spectacle."} Let your ${moon} Moon name what it actually needs: ${moonTone.need}. That need is not a weakness. It is a diagnostic tool.\n\nBy the final stretch of the month, the practical question becomes visible: what can stay, what has to be renegotiated, and what has only survived because you kept absorbing the cost? Your ${rising} Rising shows the adjustment publicly through ${risingTone.style}. People may notice the shift before they understand it.\n\nWork and money: choose the commitment that gives your effort a cleaner return. Love and family: stop translating your needs into hints. Body and energy: protect the rhythm that keeps you from confusing depletion with devotion.\n\n**Your move:** make one structural change this month that reduces hidden maintenance. The goal is not to make life smaller; it is to stop letting noise consume the energy meant for your actual growth.`;
+    return `${firstName}, this month is about structure: not the kind that makes life rigid, but the kind that lets your actual life hold more truth without spilling into constant reaction.\n\n${capitalizeFirst(sun.label)} is working through the question of ${sun.tone.drive}. That desire is not wrong, but it needs a better container. The first part of the month shows you what has been running on habit, obligation, or old momentum. Pay attention to the places that look functional from the outside but feel expensive on the inside.\n\nThe middle of the month asks for a cleaner relationship with pressure. ${signal ? `${signal.transitBody} in ${signal.transitSign} activating your ${signal.natalBody} can make growth feel urgent, but urgency is not the same thing as readiness.` : "The live transit layer points toward consolidation rather than spectacle."} Let ${moon.label} name what it actually needs: ${moon.tone.need}. That need is not a weakness. It is a diagnostic tool.\n\nBy the final stretch of the month, the practical question becomes visible: what can stay, what has to be renegotiated, and what has only survived because you kept absorbing the cost? ${capitalizeFirst(rising.label)} shows the adjustment publicly through ${rising.tone.style}. People may notice the shift before they understand it.\n\nWork and money: choose the commitment that gives your effort a cleaner return. Love and family: stop translating your needs into hints. Body and energy: protect the rhythm that keeps you from confusing depletion with devotion.\n\n**Your move:** make one structural change this month that reduces hidden maintenance. The goal is not to make life smaller; it is to stop letting noise consume the energy meant for your actual growth.`;
   }
 
-  return `${firstName}, the year is not asking you to become a different person. It is asking you to build a stronger container for the person you already are becoming.\n\nYour ${sun} Sun describes the central engine: ${sunTone.drive}. In the year ahead, that drive needs more than inspiration. It needs standards, timing, and a structure honest enough to hold the weight of what you say you want. Anything built only on mood will ask to be rebuilt later.\n\nYour ${moon} Moon names the emotional contract underneath the year. It needs ${moonTone.need}, and when that need is ignored, your system will start sending signals through fatigue, sensitivity, resentment, or over-control. The emotional work of the year is not to become unaffected. It is to stop abandoning your own weather until it becomes a storm.\n\nYour ${rising} Rising describes the visible arc: ${risingTone.style}. This is how the year teaches you to enter rooms, relationships, decisions, and opportunities with less distortion. You do not need to explain every layer of yourself to be legible. You need to make choices that let the right people read the signal clearly.\n\nThe first quarter is for clearing false urgency. The second quarter is for choosing the structure that can hold real growth. The third quarter tests whether the new rhythm works under pressure. The final quarter shows what becomes possible when your ambition, emotional truth, and public presentation stop competing with one another.\n\n${signal ? `The headline transit pattern — ${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody} — gives the year its pressure point. It shows where growth will not come from forcing the issue, but from learning how to carry power with better timing.` : "The year’s strongest signal is steadiness: less performance, more discernment, fewer inherited obligations, and a cleaner relationship with what you are actually here to build."}\n\n**Your move:** choose the life structure that can still respect you when things get busy, emotional, or uncertain. That is the structure worth building the year around.`;
+  return `${firstName}, the year is not asking you to become a different person. It is asking you to build a stronger container for the person you already are becoming.\n\n${capitalizeFirst(sun.label)} describes the central engine: ${sun.tone.drive}. In the year ahead, that drive needs more than inspiration. It needs standards, timing, and a structure honest enough to hold the weight of what you say you want. Anything built only on mood will ask to be rebuilt later.\n\n${capitalizeFirst(moon.label)} names the emotional contract underneath the year. It needs ${moon.tone.need}, and when that need is ignored, your system will start sending signals through fatigue, sensitivity, resentment, or over-control. The emotional work of the year is not to become unaffected. It is to stop abandoning your own weather until it becomes a storm.\n\n${capitalizeFirst(rising.label)} describes the visible arc: ${rising.tone.style}. This is how the year teaches you to enter rooms, relationships, decisions, and opportunities with less distortion. You do not need to explain every layer of yourself to be legible. You need to make choices that let the right people read the signal clearly.\n\nThe first quarter is for clearing false urgency. The second quarter is for choosing the structure that can hold real growth. The third quarter tests whether the new rhythm works under pressure. The final quarter shows what becomes possible when your ambition, emotional truth, and public presentation stop competing with one another.\n\n${signal ? `The headline transit pattern — ${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody} — gives the year its pressure point. It shows where growth will not come from forcing the issue, but from learning how to carry power with better timing.` : "The year’s strongest signal is steadiness: less performance, more discernment, fewer inherited obligations, and a cleaner relationship with what you are actually here to build."}\n\n**Your move:** choose the life structure that can still respect you when things get busy, emotional, or uncertain. That is the structure worth building the year around.`;
   }
+
+function hasUsableForecastPlacements(chart: ChartPayload | null) {
+  if (!chart?.bigThree?.sun || !chart?.bigThree?.moon) {
+    return false;
+  }
+
+  if (chart.birth?.unknownBirthTime) {
+    return true;
+  }
+
+  return Boolean(chart.bigThree.rising);
+}
+
+function buildReadingEnginePlacement(
+  sign: string | undefined,
+  role: "Sun" | "Moon" | "Rising",
+  fallbackLabel?: string
+): ReadingEnginePlacementDescriptor {
+  const cleanedSign = normalizePlacementSign(sign, role);
+  return {
+    label: cleanedSign ? `your ${cleanedSign} ${role}` : fallbackLabel ?? `your ${role}`,
+    role,
+    sign: cleanedSign,
+    tone: readingEngineTone(cleanedSign)
+  };
+}
+
+function capitalizeFirst(value: string) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
 
 function buildStarScopeCopy(input: { chart: ChartPayload | null; displayName: string; hasChart: boolean; question: string }) {
   const questionMode = classifyQuestion(input.question);
@@ -1822,9 +2001,9 @@ function buildStudioMarketingLead(input: {
   label: string;
   readingType: StudioReadRequest["readingType"];
 }) {
-  const sun = input.chart?.bigThree?.sun ?? "your Sun";
-  const moon = input.chart?.bigThree?.moon ?? "your Moon";
-  const rising = input.chart?.bigThree?.rising ?? "your Rising";
+  const sun = normalizePlacementSign(input.chart?.bigThree?.sun, "Sun") ?? "the Sun";
+  const moon = normalizePlacementSign(input.chart?.bigThree?.moon, "Moon") ?? "the Moon";
+  const rising = normalizePlacementSign(input.chart?.bigThree?.rising, "Rising") ?? "the Rising sign";
   const audience = input.audience.replace(/_/g, " ");
 
   return `${input.label} does not need a vague horoscope. They need a reading that turns ${sun} direction, ${moon} feeling, and ${rising} presentation into language a ${audience} audience can actually use.`;
@@ -1903,15 +2082,20 @@ type AstrologyApiLifeForecastResponse = {
 };
 
 function mergeChartWithTransit(
-  chart: Record<string, unknown>,
+  chart: unknown,
   dominantTransit: TransitSignal | null
 ) {
+  const normalizedChart = toChartRecord(chart);
+  if (!normalizedChart) {
+    return dominantTransit ? { dominantTransit } : {};
+  }
+
   if (!dominantTransit) {
-    return chart;
+    return normalizedChart;
   }
 
   return {
-    ...chart,
+    ...normalizedChart,
     dominantTransit
   };
 }
@@ -2342,12 +2526,277 @@ function getTimezoneOffsetMinutes(timezone: string, date: Date) {
   return (asUtc - date.getTime()) / 60_000;
 }
 
-function normalizeChartPayload(value: Record<string, unknown> | undefined): ChartPayload | null {
-  if (!value) {
+function normalizeChartPayload(value: unknown): ChartPayload | null {
+  const record = toChartRecord(value);
+  if (!record) {
     return null;
   }
 
-  return value as ChartPayload;
+  const planets = normalizePlacementArray(record.planets);
+  const transits = normalizePlacementArray(record.transits);
+  const wheel = normalizeChartWheel(record.wheel);
+  const birth = normalizeChartBirth(record.birth);
+  const dominantTransit = normalizeTransitSignal(record.dominantTransit);
+  const rawBigThree = asRecord(record.bigThree);
+  const sun = normalizePlacementSign(rawBigThree?.sun, "Sun") ?? findPlacementSign(planets, "Sun");
+  const moon = normalizePlacementSign(rawBigThree?.moon, "Moon") ?? findPlacementSign(planets, "Moon");
+  const rising =
+    normalizePlacementSign(rawBigThree?.rising, "Rising") ??
+    normalizePlacementSign(wheel?.ascendant?.sign, "Rising");
+  const bigThree = sun || moon || rising ? { moon, rising, sun } : undefined;
+
+  return {
+    accuracy: normalizeChartAccuracy(record.accuracy),
+    bigThree,
+    birth,
+    dominantTransit,
+    planets,
+    transits,
+    wheel
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function toChartRecord(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 3) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    try {
+      return toChartRecord(JSON.parse(value), depth + 1);
+    } catch {
+      return null;
+    }
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  if ("chart" in record) {
+    const nestedChart = toChartRecord(record.chart, depth + 1);
+    if (nestedChart) {
+      return nestedChart;
+    }
+  }
+
+  return record;
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : null;
+}
+
+function readNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function normalizePlacementSign(value: unknown, role: "Sun" | "Moon" | "Rising") {
+  const source = readString(value);
+  if (!source) {
+    return undefined;
+  }
+
+  const cleaned = source
+    .replace(/^your\s+/i, "")
+    .replace(new RegExp(`\\b${role}\\b`, "gi"), "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return undefined;
+  }
+
+  const normalized = cleaned.toLowerCase();
+  const exactMatch = ZODIAC_SIGNS.find((sign) => sign.toLowerCase() === normalized);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  return cleaned
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function normalizeGenericSign(value: unknown) {
+  const source = readString(value);
+  if (!source) {
+    return undefined;
+  }
+
+  const normalized = source.trim().toLowerCase();
+  const exactMatch = ZODIAC_SIGNS.find((sign) => sign.toLowerCase() === normalized);
+  return exactMatch;
+}
+
+function normalizePlacementArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const placements = value
+    .map((entry) => normalizePlacement(entry))
+    .filter((entry): entry is Placement => Boolean(entry));
+
+  return placements.length ? placements : undefined;
+}
+
+function normalizePlacement(value: unknown): Placement | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const body = readString(record.body)?.trim();
+  const sign = normalizeGenericSign(record.sign);
+  const degree = readNumber(record.degree);
+  const degreeInSign = readNumber(record.degreeInSign);
+  const retrograde = readBoolean(record.retrograde);
+
+  if (!body || !sign || degree === null || degreeInSign === null || retrograde === null) {
+    return null;
+  }
+
+  return {
+    body,
+    degree,
+    degreeInSign,
+    retrograde,
+    sign
+  };
+}
+
+function findPlacementSign(planets: Placement[] | undefined, body: string) {
+  return planets?.find((planet) => planet.body === body)?.sign;
+}
+
+function normalizeChartWheel(value: unknown) {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const ascendant = normalizeDegreePoint(record.ascendant);
+  const midheaven = normalizeDegreePoint(record.midheaven);
+  if (!ascendant && !midheaven) {
+    return undefined;
+  }
+
+  return {
+    ascendant,
+    midheaven
+  };
+}
+
+function normalizeDegreePoint(value: unknown): DegreePoint | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const degree = readNumber(record.degree);
+  const degreeInSign = readNumber(record.degreeInSign);
+  const sign = normalizeGenericSign(record.sign);
+  if (degree === null || degreeInSign === null || !sign) {
+    return null;
+  }
+
+  return {
+    degree,
+    degreeInSign,
+    sign
+  };
+}
+
+function normalizeChartBirth(value: unknown) {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const date = readString(record.date) ?? undefined;
+  const instantUtc = readString(record.instantUtc) ?? undefined;
+  const latitude = readNumber(record.latitude) ?? undefined;
+  const longitude = readNumber(record.longitude) ?? undefined;
+  const place = readString(record.place) ?? undefined;
+  const time = readString(record.time) ?? undefined;
+  const timezone = readString(record.timezone) ?? undefined;
+  const unknownBirthTime = readBoolean(record.unknownBirthTime) ?? undefined;
+
+  if (!date && !instantUtc && latitude === undefined && longitude === undefined && !place && !time && !timezone && unknownBirthTime === undefined) {
+    return undefined;
+  }
+
+  return {
+    date,
+    instantUtc,
+    latitude,
+    longitude,
+    place,
+    time,
+    timezone,
+    unknownBirthTime
+  };
+}
+
+function normalizeChartAccuracy(value: unknown) {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const engine = readString(record.engine) ?? undefined;
+  const houses = readString(record.houses) ?? undefined;
+  const planets = readString(record.planets) ?? undefined;
+
+  if (!engine && !houses && !planets) {
+    return undefined;
+  }
+
+  return {
+    engine,
+    houses,
+    planets
+  };
+}
+
+function normalizeTransitSignal(value: unknown): TransitSignal | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const aspect = readString(record.aspect)?.trim();
+  const exactness = readNumber(record.exactness);
+  const natalBody = readString(record.natalBody)?.trim();
+  const natalSign = readString(record.natalSign)?.trim();
+  const orb = readNumber(record.orb);
+  const transitBody = readString(record.transitBody)?.trim();
+  const transitSign = normalizeGenericSign(record.transitSign) ?? readString(record.transitSign)?.trim();
+
+  if (!aspect || exactness === null || !natalBody || !natalSign || orb === null || !transitBody || !transitSign) {
+    return undefined;
+  }
+
+  return {
+    aspect,
+    exactness,
+    natalBody,
+    natalSign,
+    orb,
+    transitBody,
+    transitSign
+  };
 }
 
 function requirePlacement(planets: Placement[], body: string) {
@@ -2858,7 +3307,7 @@ async function readJson<T>(request: Request): Promise<T> {
 
 async function readSupabasePayload(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
+  if (contentType.includes("json")) {
     return response.json();
   }
 
