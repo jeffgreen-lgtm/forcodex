@@ -1132,14 +1132,15 @@ function createMockAiReadingProvider(): AiReadingProvider {
           title: "Monthly structure",
           dateLabel,
           paragraphs: [
-            `${firstName}, the month’s deeper structure is asking you to stop treating pressure as proof that something is wrong. Pressure is the map. It shows where the old container is no longer clean enough for the life trying to come through.`,
-            `${capitalizeFirst(sun.label)} shows where the month wants movement: ${sun.tone.drive}. But movement only becomes meaningful when ${moon.label} gets ${moon.tone.need}. Otherwise growth starts to feel like another performance.`,
-            `${capitalizeFirst(rising.label)} is the public-facing adjustment. This month, the work is not to be more visible. It is to become more legible to the right people, in the right rooms, for the right reasons.`,
-            `${pressure} gives the month its repeating signal. When the same theme returns, do not call it a failure. Call it evidence. The pattern is showing you where the structure has to change.`
+            `${firstName}, the month’s deeper structure is not asking you to become someone else. It is asking you to notice where your current container no longer fits the life trying to come through.`,
+            `${capitalizeFirst(sun.label)} shows where the month wants movement: ${sun.tone.drive}. But your most aligned self does not move just to prove growth is happening. It moves when the timing, truth, and next step begin to agree.`,
+            `${capitalizeFirst(moon.label)} names the emotional term that cannot be skipped: ${moon.tone.need}. If that need is treated as optional, the month gets noisier. If it is honored, your choices start working with your energy instead of against it.`,
+            `${capitalizeFirst(rising.label)} is the public-facing adjustment. This month, the path forward is not simply to be more visible. It is to become more legible to the right people, in the right rooms, for the right reasons.`,
+            `${pressure} gives the month its repeating signal. When the same theme returns, do not call it failure. Call it evidence. The pattern is showing you what needs a stronger structure, a cleaner boundary, or a more honest belief.`
           ],
           signals: [sun.label, moon.label, rising.label, pressure, "structure", "legibility"],
           yourMove:
-            "Name one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s priority."
+            "Name one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s aligned priority."
         } satisfies ReadingEngineV2Result;
       }
 
@@ -1148,13 +1149,13 @@ function createMockAiReadingProvider(): AiReadingProvider {
         dateLabel,
         paragraphs: [
           `${firstName}, the year’s larger assignment is to build a life that can hold more truth without requiring constant emergency energy.`,
-          `${capitalizeFirst(sun.label)} shows the direction of growth: ${sun.tone.drive}. ${capitalizeFirst(moon.label)} shows the emotional terms that cannot be skipped: ${moon.tone.need}. ${capitalizeFirst(rising.label)} shows how the world keeps asking you to become more legible.`,
-          `This is not reinvention for spectacle. It is a cleaner container for the person you already know you are becoming. The old version of you may still be negotiating, but the future version needs practical advantages, not just hope.`,
-          `${pressure} gives the year a pressure point. Pay attention to where the same lesson keeps wearing different clothes. That is where your life is asking for a more honest architecture.`
+          `${capitalizeFirst(sun.label)} shows the direction of becoming: ${sun.tone.drive}. ${capitalizeFirst(moon.label)} shows the emotional term that cannot be skipped: ${moon.tone.need}. ${capitalizeFirst(rising.label)} shows how the world keeps asking you to become more legible without becoming less yourself.`,
+          `This is not reinvention for spectacle. It is the construction of a cleaner container for the person you already know you are becoming. The old version of you may still be negotiating, but the future version needs practical advantages, not just hope.`,
+          `${pressure} gives the year its pressure point. Pay attention to where the same lesson keeps wearing different clothes. That is where your life is asking for a more honest architecture: a choice, structure, or belief that lets your most aligned self become easier to live from.`
         ],
         signals: [sun.label, moon.label, rising.label, pressure, "larger assignment", "honest architecture"],
         yourMove:
-          "Pick the area of life where the old version of you keeps negotiating with the future version. Give the future version one practical advantage this week."
+          "Pick the area of life where the old version of you keeps negotiating with the future version. Give your most aligned self one practical advantage this week."
       } satisfies ReadingEngineV2Result;
     }
   };
