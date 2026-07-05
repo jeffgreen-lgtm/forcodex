@@ -1090,7 +1090,7 @@ function createMockAiReadingProvider(): AiReadingProvider {
       });
       const signal = input.chart?.dominantTransit;
       const pressure = signal
-        ? `${signal.transitBody} in ${signal.transitSign} pressing on ${signal.natalBody}`
+        ? `${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody}`
         : "the current sky asking for cleaner timing";
       const dateLabel = buildReadingEngineV2DateLabel(input.timeframe, input.effectiveDate);
 
@@ -1099,13 +1099,14 @@ function createMockAiReadingProvider(): AiReadingProvider {
           title: "Daily decoding",
           dateLabel,
           paragraphs: [
-            `${firstName}, the pattern underneath the pattern today is not about doing more. It is about noticing where ${sun.label} wants ${sun.tone.drive}, while ${pressure} makes one emotional shortcut feel louder than the truth.`,
-            `${capitalizeFirst(moon.label)} is where the body tells the truth first. The need is ${moon.tone.need}; when that need gets ignored, the day can turn small friction into a false emergency.`,
-            `${capitalizeFirst(rising.label)} is the signal other people read before you explain yourself. Use that doorway deliberately: let ${rising.tone.style} become clearer, not louder.`
+            `${firstName}, the pattern underneath the pattern today is that your instinct may be moving faster than your clarity. ${capitalizeFirst(sun.label)} wants ${sun.tone.drive}, but the stronger move is not more speed. It is choosing the one truth that can survive contact with the actual day.`,
+            `${capitalizeFirst(moon.label)} is the private weather system underneath the obvious story. It needs ${moon.tone.need}. If that need is ignored, the day can turn ordinary friction into a false emergency; if it is respected, you get your leverage back before the noise makes decisions for you.`,
+            `${capitalizeFirst(rising.label)} is the doorway other people meet first. Today, ${rising.tone.style} works best when it is edited, not performed. Let the room feel your signal without giving the room access to your whole nervous system.`,
+            `${pressure} gives the day its pressure point. This is not a warning; it is a focus lens. Watch where you want instant certainty, because that is probably where the deeper pattern is asking for a cleaner container.`
           ],
-          signals: [sun.label, moon.label, rising.label, pressure],
+          signals: [sun.label, moon.label, rising.label, pressure, "cleaner timing", "less performance"],
           yourMove:
-            "Choose the one conversation, task, or decision that keeps demanding instant certainty. Give it one clean boundary and one honest next step."
+            "Pick one place where you are tempted to over-explain. Say the truer thing in fewer words, then let the result give you information."
         } satisfies ReadingEngineV2Result;
       }
 
@@ -1114,14 +1115,15 @@ function createMockAiReadingProvider(): AiReadingProvider {
           title: "Weekly breakdown",
           dateLabel,
           paragraphs: [
-            `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from tracking how ${sun.label}, ${moon.label}, and ${rising.label} each ask for something different.`,
-            `Early in the week, ${sun.label} wants ${sun.tone.drive}, but speed is not the same as trust. Narrow the field before you make the bigger move.`,
-            `Midweek, ${moon.label} needs ${moon.tone.need}. That is where the week reveals whether you are responding to the present moment or managing old emotional weather.`,
-            `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you show up with less explanation and more signal.`
+            `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from tracking how ${sun.label}, ${moon.label}, and ${rising.label} each ask for a different kind of honesty.`,
+            `Early in the week, ${sun.label} wants ${sun.tone.drive}. That can be powerful, but only if you stop confusing motion with alignment. The first win is not a dramatic leap; it is refusing to spend your life force on a decision that has not earned it.`,
+            `Midweek, ${moon.label} becomes the truth serum. It needs ${moon.tone.need}, and the body will probably say that before the mind admits it. Notice what gets louder when you are tired, rushed, or trying to keep everyone else comfortable.`,
+            `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you return to the world with more signal and less residue. You do not need to drag the whole emotional weather system into every room.`,
+            `${pressure} marks the week’s pressure point. The lesson is not to avoid friction. The lesson is to stop treating every friction point as proof that you are behind, wrong, or required to perform.`
           ],
-          signals: [sun.label, moon.label, rising.label, pressure],
+          signals: [sun.label, moon.label, rising.label, pressure, "sequence", "emotional weather"],
           yourMove:
-            "Name the one pattern that keeps repeating, then decide whether it needs action, a boundary, or less performance from you."
+            "Choose the repeating situation that keeps asking for your attention. Decide whether it needs action, a boundary, or simply less performance from you."
         } satisfies ReadingEngineV2Result;
       }
 
@@ -1130,13 +1132,14 @@ function createMockAiReadingProvider(): AiReadingProvider {
           title: "Monthly structure",
           dateLabel,
           paragraphs: [
-            `${firstName}, the month’s deeper structure is asking you to stop treating pressure as proof that something is wrong. Pressure is the map.`,
-            `${capitalizeFirst(sun.label)} shows where the month wants movement. ${capitalizeFirst(moon.label)} shows what must be cared for so that movement does not become avoidance.`,
-            `${capitalizeFirst(rising.label)} is the public-facing adjustment: how you enter rooms, conversations, and obligations without handing them your whole nervous system.`
+            `${firstName}, the month’s deeper structure is asking you to stop treating pressure as proof that something is wrong. Pressure is the map. It shows where the old container is no longer clean enough for the life trying to come through.`,
+            `${capitalizeFirst(sun.label)} shows where the month wants movement: ${sun.tone.drive}. But movement only becomes meaningful when ${moon.label} gets ${moon.tone.need}. Otherwise growth starts to feel like another performance.`,
+            `${capitalizeFirst(rising.label)} is the public-facing adjustment. This month, the work is not to be more visible. It is to become more legible to the right people, in the right rooms, for the right reasons.`,
+            `${pressure} gives the month its repeating signal. When the same theme returns, do not call it a failure. Call it evidence. The pattern is showing you where the structure has to change.`
           ],
-          signals: [sun.label, moon.label, rising.label, pressure],
+          signals: [sun.label, moon.label, rising.label, pressure, "structure", "legibility"],
           yourMove:
-            "Choose one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s priority."
+            "Name one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s priority."
         } satisfies ReadingEngineV2Result;
       }
 
@@ -1145,12 +1148,13 @@ function createMockAiReadingProvider(): AiReadingProvider {
         dateLabel,
         paragraphs: [
           `${firstName}, the year’s larger assignment is to build a life that can hold more truth without requiring constant emergency energy.`,
-          `${capitalizeFirst(sun.label)} shows the direction of growth. ${capitalizeFirst(moon.label)} shows the emotional terms that cannot be skipped. ${capitalizeFirst(rising.label)} shows the way the world keeps asking you to become more legible.`,
-          `The point is not reinvention for its own sake. The point is a cleaner container for the person you already know you are becoming.`
+          `${capitalizeFirst(sun.label)} shows the direction of growth: ${sun.tone.drive}. ${capitalizeFirst(moon.label)} shows the emotional terms that cannot be skipped: ${moon.tone.need}. ${capitalizeFirst(rising.label)} shows how the world keeps asking you to become more legible.`,
+          `This is not reinvention for spectacle. It is a cleaner container for the person you already know you are becoming. The old version of you may still be negotiating, but the future version needs practical advantages, not just hope.`,
+          `${pressure} gives the year a pressure point. Pay attention to where the same lesson keeps wearing different clothes. That is where your life is asking for a more honest architecture.`
         ],
-        signals: [sun.label, moon.label, rising.label, pressure],
+        signals: [sun.label, moon.label, rising.label, pressure, "larger assignment", "honest architecture"],
         yourMove:
-          "Pick the one area of life where the old version of you keeps negotiating with the future version. Give the future version one practical advantage this week."
+          "Pick the area of life where the old version of you keeps negotiating with the future version. Give the future version one practical advantage this week."
       } satisfies ReadingEngineV2Result;
     }
   };
