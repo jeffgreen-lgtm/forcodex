@@ -1016,6 +1016,100 @@ type ReadingEngineGenerationInput = {
   hasChart: boolean;
 };
 
+type ReadingEngineV2PromptPayload = {
+  system: string;
+  task: string;
+  rules: string[];
+  input: {
+    displayName?: string;
+    firstName: string;
+    timeframe: ForecastTimeframe;
+    effectiveDate: string;
+    chart: {
+      sun: string;
+      moon: string;
+      rising: string;
+      dominantTransit?: unknown;
+    };
+  };
+  outputShape: {
+    title: "string";
+    dateLabel: "string";
+    paragraphs: "string[]";
+    signals: "string[]";
+    yourMove: "string";
+  };
+};
+
+function buildReadingEngineV2PromptPayload(input: ReadingEngineGenerationInput): ReadingEngineV2PromptPayload | null {
+  if (!input.chart?.bigThree?.sun || !input.chart.bigThree.moon || !input.chart.bigThree.rising) {
+    return null;
+  }
+
+  const { firstName } = readingEngineNames({
+    chart: input.chart,
+    displayName: input.displayName
+  });
+
+  return {
+    system:
+      "You are the CosmoScope Reading Engine. CosmoScope reads the stars, then shows the path toward the member's most aligned self.",
+    task:
+      "Generate one CosmoScope reading for the requested timeframe using only the provided chart, transit, member, and timeframe context.",
+    rules: [
+      "Never stop at description. Name the pattern, reveal the pressure point, and show the path forward.",
+      "Use the member's Sun, Moon, Rising, and dominant transit naturally.",
+      "Preserve member agency. Do not make guaranteed predictions.",
+      "Do not imitate competitors, authors, celebrities, or famous-person personas.",
+      "Do not output generic horoscope filler.",
+      "Do not mention being an AI, a model, a provider, or a system prompt.",
+      "Return only structured reading content with title, dateLabel, paragraphs, signals, and yourMove.",
+      "End with one practical Your move."
+    ],
+    input: {
+      displayName: input.displayName,
+      firstName,
+      timeframe: input.timeframe,
+      effectiveDate: input.effectiveDate,
+      chart: {
+        sun: input.chart.bigThree.sun,
+        moon: input.chart.bigThree.moon,
+        rising: input.chart.bigThree.rising,
+        dominantTransit: input.chart.dominantTransit
+      }
+    },
+    outputShape: {
+      title: "string",
+      dateLabel: "string",
+      paragraphs: "string[]",
+      signals: "string[]",
+      yourMove: "string"
+    }
+  };
+}
+
+function buildReadingEngineV2Prompt(input: ReadingEngineGenerationInput): string | null {
+  const payload = buildReadingEngineV2PromptPayload(input);
+  if (!payload) {
+    return null;
+  }
+
+  return [
+    payload.system,
+    "",
+    `Task: ${payload.task}`,
+    "",
+    "Rules:",
+    ...payload.rules.map((rule) => `- ${rule}`),
+    "",
+    "Input:",
+    JSON.stringify(payload.input, null, 2),
+    "",
+    "Required output shape:",
+    JSON.stringify(payload.outputShape, null, 2)
+  ].join("\n");
+}
+
 type AiReadingProvider = {
   generate(input: ReadingEngineGenerationInput): Promise<unknown>;
   name: string;
