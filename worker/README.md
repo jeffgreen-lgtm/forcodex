@@ -116,3 +116,32 @@ Optional variable:
 
 - `APP_ENV`
 - `APPLE_SERVER_NOTIFICATION_BEARER`
+
+
+## Reading Engine v2 development
+
+V1 is the protected fallback. V2 is disabled by default.
+
+Default Worker vars:
+- READING_ENGINE_VERSION=v1
+- ENABLE_AI_READINGS=false
+- AI_READING_PROVIDER=mock
+
+Local mock-provider testing can enable V2 without model credits:
+READING_ENGINE_VERSION=v2 ENABLE_AI_READINGS=true AI_READING_PROVIDER=mock pnpm --filter @cosmoscope/worker dev
+
+Expected behavior:
+- V1 still serves forecasts when V2 is disabled.
+- V2 enabled with AI_READING_PROVIDER=mock returns richer Reading Engine v2 copy without an external key.
+- V2 enabled without a supported provider falls back to V1.
+- Provider errors fall back to V1 and never expose raw model errors to members.
+- Existing forecast_cache still prevents repeated generation for the same member, timeframe, and effective date.
+
+Direct V2 smoke-test flow:
+1. Start the Worker locally with V2 mock env flags.
+2. Signup a fresh member.
+3. Call /api/chart.
+4. Call /api/forecast with daily and weekly.
+5. Verify daily includes Jeff and the phrase “the pattern underneath the pattern.”
+6. Verify weekly includes “the week’s actual story.”
+7. Verify there is no “Your your,” “Sun Sun,” “Moon Moon,” or “Rising Rising.”

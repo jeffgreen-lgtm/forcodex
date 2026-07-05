@@ -112,13 +112,16 @@ type ForecastRow = {
 };
 
 type Env = {
+  AI_READING_PROVIDER?: string;
   APP_ENV?: string;
   APPLE_SERVER_NOTIFICATION_BEARER?: string;
   APP_URL?: string;
   ASTROLOGY_API_KEY?: string;
   CORS_ALLOWED_ORIGINS?: string;
   COSMOSCOPE_STUDIO_ACCESS_KEY?: string;
+  ENABLE_AI_READINGS?: string;
   PAYMENTS_DISABLED_PREVIEW?: string;
+  READING_ENGINE_VERSION?: string;
   STRIPE_SECRET_KEY?: string;
   SUPABASE_ANON_KEY: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
@@ -697,7 +700,7 @@ async function handleForecast(request: Request, env: Env) {
 
   const effectiveDate = getEffectiveDate(timeframe);
   const cached = await loadForecast(env, auth.user.id, timeframe, effectiveDate, auth.token);
-  if (cached && !shouldRegenerateForecast(cached.content, timeframe)) {
+  if (cached && !shouldRegenerateForecast(cached.content, timeframe, env)) {
     return json({
       cached: true,
       content: cached.content,
@@ -729,9 +732,13 @@ async function handleForecast(request: Request, env: Env) {
     astrologyInput,
     timeframe === "daily" ? "daily" : timeframe === "weekly" ? "weekly" : "long_range"
   );
-  const content = buildForecastCopy({
-    chart: normalizedChart ? { ...normalizedChart, dominantTransit: dominantTransit ?? undefined } : normalizedChart,
+  const chartForForecast = normalizedChart ? { ...normalizedChart, dominantTransit: dominantTransit ?? undefined } : normalizedChart;
+  const content = await buildForecastContent({
+    chart: chartForForecast,
     displayName,
+    effectiveDate,
+    entitlements,
+    env,
     timeframe,
     hasChart: Boolean(chart)
   });
@@ -843,10 +850,14 @@ async function handleStudioRead(request: Request, env: Env) {
   return json(result);
 }
 
-function shouldRegenerateForecast(content: string, timeframe: ForecastTimeframe) {
+function shouldRegenerateForecast(content: string, timeframe: ForecastTimeframe, env?: Env) {
   const trimmed = content.trim();
 
   if (!trimmed) {
+    return true;
+  }
+
+  if (env && isReadingEngineV2Enabled(env) && !isReadingEngineV2CachedContent(trimmed)) {
     return true;
   }
 
@@ -888,6 +899,234 @@ function splitForecastParagraphs(content: string) {
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
 }
+
+type ReadingEngineV2Result = {
+  dateLabel: string;
+  paragraphs: string[];
+  signals: string[];
+  title: string;
+  yourMove: string;
+};
+
+type ReadingEngineGenerationInput = {
+  chart: ChartPayload | null;
+  displayName: string;
+  effectiveDate: string;
+  entitlements: EntitlementsRow;
+  env: Env;
+  timeframe: ForecastTimeframe;
+  hasChart: boolean;
+};
+
+type AiReadingProvider = {
+  generate(input: ReadingEngineGenerationInput): Promise<unknown>;
+  name: string;
+};
+
+async function buildForecastContent(input: ReadingEngineGenerationInput) {
+  const v1Content = buildForecastCopy({
+    chart: input.chart,
+    displayName: input.displayName,
+    timeframe: input.timeframe,
+    hasChart: input.hasChart
+  });
+
+  if (!isReadingEngineV2Enabled(input.env)) {
+    return v1Content;
+  }
+
+  if (!input.hasChart || !hasUsableForecastPlacements(input.chart)) {
+    return v1Content;
+  }
+
+  const provider = resolveAiReadingProvider(input.env);
+  if (!provider) {
+    return v1Content;
+  }
+
+  try {
+    const rawReading = await provider.generate(input);
+    const validated = validateReadingEngineV2Result(rawReading);
+    return renderReadingEngineV2Result(validated);
+  } catch (error) {
+    console.warn("Reading Engine v2 failed; falling back to v1.", {
+      error,
+      provider: provider.name,
+      timeframe: input.timeframe
+    });
+    return v1Content;
+  }
+}
+
+function isReadingEngineV2Enabled(env: Env) {
+  return env.READING_ENGINE_VERSION?.toLowerCase() === "v2" || env.ENABLE_AI_READINGS?.toLowerCase() === "true";
+}
+
+function isReadingEngineV2CachedContent(content: string) {
+  return (
+    content.includes("the pattern underneath the pattern") ||
+    content.includes("the week’s actual story") ||
+    content.includes("the month’s deeper structure") ||
+    content.includes("the year’s larger assignment")
+  );
+}
+
+function resolveAiReadingProvider(env: Env): AiReadingProvider | null {
+  const provider = env.AI_READING_PROVIDER?.trim().toLowerCase();
+
+  if (provider === "mock") {
+    return createMockAiReadingProvider();
+  }
+
+  return null;
+}
+
+function createMockAiReadingProvider(): AiReadingProvider {
+  return {
+    name: "mock",
+    async generate(input) {
+      const { firstName, moon, rising, sun } = readingEngineNames({
+        chart: input.chart,
+        displayName: input.displayName
+      });
+      const signal = input.chart?.dominantTransit;
+      const pressure = signal
+        ? `${signal.transitBody} in ${signal.transitSign} pressing on ${signal.natalBody}`
+        : "the current sky asking for cleaner timing";
+      const dateLabel = buildReadingEngineV2DateLabel(input.timeframe, input.effectiveDate);
+
+      if (input.timeframe === "daily") {
+        return {
+          title: "Daily decoding",
+          dateLabel,
+          paragraphs: [
+            `${firstName}, the pattern underneath the pattern today is not about doing more. It is about noticing where ${sun.label} wants ${sun.tone.drive}, while ${pressure} makes one emotional shortcut feel louder than the truth.`,
+            `${capitalizeFirst(moon.label)} is where the body tells the truth first. The need is ${moon.tone.need}; when that need gets ignored, the day can turn small friction into a false emergency.`,
+            `${capitalizeFirst(rising.label)} is the signal other people read before you explain yourself. Use that doorway deliberately: let ${rising.tone.style} become clearer, not louder.`
+          ],
+          signals: [sun.label, moon.label, rising.label, pressure],
+          yourMove:
+            "Choose the one conversation, task, or decision that keeps demanding instant certainty. Give it one clean boundary and one honest next step."
+        } satisfies ReadingEngineV2Result;
+      }
+
+      if (input.timeframe === "weekly") {
+        return {
+          title: "Weekly breakdown",
+          dateLabel,
+          paragraphs: [
+            `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from tracking how ${sun.label}, ${moon.label}, and ${rising.label} each ask for something different.`,
+            `Early in the week, ${sun.label} wants ${sun.tone.drive}, but speed is not the same as trust. Narrow the field before you make the bigger move.`,
+            `Midweek, ${moon.label} needs ${moon.tone.need}. That is where the week reveals whether you are responding to the present moment or managing old emotional weather.`,
+            `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you show up with less explanation and more signal.`
+          ],
+          signals: [sun.label, moon.label, rising.label, pressure],
+          yourMove:
+            "Name the one pattern that keeps repeating, then decide whether it needs action, a boundary, or less performance from you."
+        } satisfies ReadingEngineV2Result;
+      }
+
+      if (input.timeframe === "monthly") {
+        return {
+          title: "Monthly structure",
+          dateLabel,
+          paragraphs: [
+            `${firstName}, the month’s deeper structure is asking you to stop treating pressure as proof that something is wrong. Pressure is the map.`,
+            `${capitalizeFirst(sun.label)} shows where the month wants movement. ${capitalizeFirst(moon.label)} shows what must be cared for so that movement does not become avoidance.`,
+            `${capitalizeFirst(rising.label)} is the public-facing adjustment: how you enter rooms, conversations, and obligations without handing them your whole nervous system.`
+          ],
+          signals: [sun.label, moon.label, rising.label, pressure],
+          yourMove:
+            "Choose one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s priority."
+        } satisfies ReadingEngineV2Result;
+      }
+
+      return {
+        title: "Yearly blueprint",
+        dateLabel,
+        paragraphs: [
+          `${firstName}, the year’s larger assignment is to build a life that can hold more truth without requiring constant emergency energy.`,
+          `${capitalizeFirst(sun.label)} shows the direction of growth. ${capitalizeFirst(moon.label)} shows the emotional terms that cannot be skipped. ${capitalizeFirst(rising.label)} shows the way the world keeps asking you to become more legible.`,
+          `The point is not reinvention for its own sake. The point is a cleaner container for the person you already know you are becoming.`
+        ],
+        signals: [sun.label, moon.label, rising.label, pressure],
+        yourMove:
+          "Pick the one area of life where the old version of you keeps negotiating with the future version. Give the future version one practical advantage this week."
+      } satisfies ReadingEngineV2Result;
+    }
+  };
+}
+
+function validateReadingEngineV2Result(value: unknown): ReadingEngineV2Result {
+  if (!value || typeof value !== "object") {
+    throw new Error("Reading Engine v2 returned a non-object payload.");
+  }
+
+  const record = value as Record<string, unknown>;
+  const title = sanitizeReadingText(record.title);
+  const dateLabel = sanitizeReadingText(record.dateLabel);
+  const paragraphs = Array.isArray(record.paragraphs)
+    ? record.paragraphs.map(sanitizeReadingText).filter(Boolean).slice(0, 6)
+    : [];
+  const signals = Array.isArray(record.signals)
+    ? record.signals.map(sanitizeReadingText).filter(Boolean).slice(0, 8)
+    : [];
+  const yourMove = sanitizeReadingText(record.yourMove);
+
+  if (!title || !dateLabel || paragraphs.length < 3 || !yourMove) {
+    throw new Error("Reading Engine v2 returned an incomplete payload.");
+  }
+
+  const rendered = [...paragraphs, yourMove].join(" ");
+  assertValidReadingEngineV2Copy(rendered);
+
+  return {
+    dateLabel,
+    paragraphs,
+    signals,
+    title,
+    yourMove
+  };
+}
+
+function renderReadingEngineV2Result(reading: ReadingEngineV2Result) {
+  return `${reading.paragraphs.join("\n\n")}\n\n**Your move:** ${reading.yourMove}`;
+}
+
+function assertValidReadingEngineV2Copy(content: string) {
+  const banned = [/your your/i, /sun sun/i, /moon moon/i, /rising rising/i, /as an ai/i, /language model/i];
+
+  for (const pattern of banned) {
+    if (pattern.test(content)) {
+      throw new Error("Reading Engine v2 copy failed hygiene validation.");
+    }
+  }
+}
+
+function sanitizeReadingText(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function buildReadingEngineV2DateLabel(timeframe: ForecastTimeframe, effectiveDate: string) {
+  if (timeframe === "daily") {
+    return effectiveDate;
+  }
+
+  if (timeframe === "weekly") {
+    return `Week of ${effectiveDate}`;
+  }
+
+  if (timeframe === "monthly") {
+    return `Month of ${effectiveDate.slice(0, 7)}`;
+  }
+
+  return `Year of ${effectiveDate.slice(0, 4)}`;
+}
+
 
 async function handleStarScope(request: Request, env: Env) {
   assertSupabaseEnv(env);

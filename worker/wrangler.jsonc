@@ -8,9 +8,12 @@
     "enabled": true
   },
   "vars": {
+    "AI_READING_PROVIDER": "mock",
     "APP_ENV": "production",
     "APP_URL": "https://cosmo.greenhenncollective.com",
+    "ENABLE_AI_READINGS": "false",
     "PAYMENTS_DISABLED_PREVIEW": "false",
+    "READING_ENGINE_VERSION": "v1",
     "SUPABASE_URL": "https://yjfnorcmbqciysacgyar.supabase.co"
   }
 }
