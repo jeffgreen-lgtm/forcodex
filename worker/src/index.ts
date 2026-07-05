@@ -1061,11 +1061,12 @@ function isReadingEngineV2Enabled(env: Env) {
 }
 
 function isReadingEngineV2CachedContent(content: string) {
+  const normalized = content.toLowerCase().replace(/[‘’]/g, "'");
   return (
-    content.includes("the pattern underneath the pattern") ||
-    content.includes("the week’s actual story") ||
-    content.includes("the month’s deeper structure") ||
-    content.includes("the year’s larger assignment")
+    normalized.includes("the pattern underneath the pattern") ||
+    normalized.includes("the week's actual story") ||
+    normalized.includes("the month’s deeper structure".replace(/[‘’]/g, "'")) ||
+    normalized.includes("the year’s larger assignment".replace(/[‘’]/g, "'"))
   );
 }
 
