@@ -1099,14 +1099,14 @@ function createMockAiReadingProvider(): AiReadingProvider {
           title: "Daily decoding",
           dateLabel,
           paragraphs: [
-            `${firstName}, the pattern underneath the pattern today is that your instinct may be moving faster than your clarity. ${capitalizeFirst(sun.label)} wants ${sun.tone.drive}, but the stronger move is not more speed. It is choosing the one truth that can survive contact with the actual day.`,
-            `${capitalizeFirst(moon.label)} is the private weather system underneath the obvious story. It needs ${moon.tone.need}. If that need is ignored, the day can turn ordinary friction into a false emergency; if it is respected, you get your leverage back before the noise makes decisions for you.`,
-            `${capitalizeFirst(rising.label)} is the doorway other people meet first. Today, ${rising.tone.style} works best when it is edited, not performed. Let the room feel your signal without giving the room access to your whole nervous system.`,
-            `${pressure} gives the day its pressure point. This is not a warning; it is a focus lens. Watch where you want instant certainty, because that is probably where the deeper pattern is asking for a cleaner container.`
+            `${firstName}, the pattern underneath the pattern today is that your instinct may be moving faster than your clarity. ${capitalizeFirst(sun.label)} wants ${sun.tone.drive}, but your most aligned self does not need to chase every signal to prove the path is real.`,
+            `${capitalizeFirst(moon.label)} needs ${moon.tone.need}. If that need is ignored, ordinary friction can start pretending to be an emergency. If it is honored, you get your leverage back before the noise makes decisions for you.`,
+            `${capitalizeFirst(rising.label)} is the doorway other people meet first. Today, let ${rising.tone.style} become a filter, not a flood. You can be open without giving every room access to your whole nervous system.`,
+            `${pressure} gives the day its pressure point: the temptation to make certainty louder than truth. The aligned path is quieter. Choose the sentence, boundary, or next step that brings your energy back into agreement with what you already know.`
           ],
           signals: [sun.label, moon.label, rising.label, pressure, "cleaner timing", "less performance"],
           yourMove:
-            "Pick one place where you are tempted to over-explain. Say the truer thing in fewer words, then let the result give you information."
+            "Pick one place where you are tempted to over-explain. Say the truer thing in fewer words, then let the result show you what is actually aligned."
         } satisfies ReadingEngineV2Result;
       }
 
@@ -1115,11 +1115,11 @@ function createMockAiReadingProvider(): AiReadingProvider {
           title: "Weekly breakdown",
           dateLabel,
           paragraphs: [
-            `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from tracking how ${sun.label}, ${moon.label}, and ${rising.label} each ask for a different kind of honesty.`,
+            `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from noticing where ${sun.label}, ${moon.label}, and ${rising.label} are asking you to stop performing certainty and start moving from alignment.`,
             `Early in the week, ${sun.label} wants ${sun.tone.drive}. That can be powerful, but only if you stop confusing motion with alignment. The first win is not a dramatic leap; it is refusing to spend your life force on a decision that has not earned it.`,
-            `Midweek, ${moon.label} becomes the truth serum. It needs ${moon.tone.need}, and the body will probably say that before the mind admits it. Notice what gets louder when you are tired, rushed, or trying to keep everyone else comfortable.`,
-            `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you return to the world with more signal and less residue. You do not need to drag the whole emotional weather system into every room.`,
-            `${pressure} marks the week’s pressure point. The lesson is not to avoid friction. The lesson is to stop treating every friction point as proof that you are behind, wrong, or required to perform.`
+            `Midweek, ${moon.label} becomes the truth serum. It needs ${moon.tone.need}. Notice what gets louder when you are tired, rushed, or trying to keep everyone else comfortable.`,
+            `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you return to the world with more signal and less residue. Your most aligned self does not need to drag the whole emotional weather system into every room.`,
+            `${pressure} marks the week’s pressure point: the urge to dramatize friction instead of reading it. The path forward is to treat friction as information, not a verdict.`
           ],
           signals: [sun.label, moon.label, rising.label, pressure, "sequence", "emotional weather"],
           yourMove:
