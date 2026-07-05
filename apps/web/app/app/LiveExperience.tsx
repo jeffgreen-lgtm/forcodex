@@ -1178,6 +1178,9 @@ export function LiveExperience() {
         <a href="/" className="demo-wordmark">
           CosmoScope
         </a>
+        <a className="button-secondary" href="/beta-feedback">
+          Beta feedback
+        </a>
       </header>
 
       {phase === "auth" ? (
