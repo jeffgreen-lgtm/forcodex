@@ -118,6 +118,8 @@ type ForecastRow = {
 
 type Env = {
   AI_READING_PROVIDER?: string;
+  AI_READING_MODEL?: string;
+  GEMINI_API_KEY?: string;
   APP_ENV?: string;
   APPLE_SERVER_NOTIFICATION_BEARER?: string;
   APP_URL?: string;
@@ -1063,7 +1065,7 @@ function buildReadingEngineV2PromptPayload(input: ReadingEngineGenerationInput):
       "Do not imitate competitors, authors, celebrities, or famous-person personas.",
       "Do not output generic horoscope filler.",
       "Do not mention being an AI, a model, a provider, or a system prompt.",
-      "Return only structured reading content with title, dateLabel, paragraphs, signals, and yourMove.",
+      "Return valid JSON only with title, dateLabel, paragraphs, signals, and yourMove.",
       "End with one practical Your move."
     ],
     input: {
@@ -1171,7 +1173,76 @@ function resolveAiReadingProvider(env: Env): AiReadingProvider | null {
     return createMockAiReadingProvider();
   }
 
+  if (provider === "gemini" && env.GEMINI_API_KEY) {
+    return createGeminiReadingProvider(env);
+  }
+
   return null;
+}
+
+type GeminiInteractionResponse = {
+  output_text?: unknown;
+  error?: {
+    message?: unknown;
+  };
+};
+
+function createGeminiReadingProvider(env: Env): AiReadingProvider {
+  return {
+    name: "gemini",
+    async generate(input) {
+      const promptPayload = buildReadingEngineV2PromptPayload(input);
+      const prompt = buildReadingEngineV2Prompt(input);
+
+      if (!promptPayload || !prompt) {
+        throw new Error("Gemini provider requires usable Reading Engine v2 prompt data.");
+      }
+
+      const model = env.AI_READING_MODEL?.trim() || "gemini-3.5-flash";
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": env.GEMINI_API_KEY ?? ""
+        },
+        body: JSON.stringify({
+          model,
+          system_instruction: promptPayload.system,
+          input: prompt,
+          generation_config: {
+            temperature: 0.7,
+            thinking_level: "low"
+          }
+        })
+      });
+
+      const data = (await response.json().catch(() => ({}))) as GeminiInteractionResponse;
+
+      if (!response.ok) {
+        const message = typeof data.error?.message === "string" ? data.error.message : `Gemini request failed with ${response.status}`;
+        throw new Error(message);
+      }
+
+      const outputText = typeof data.output_text === "string" ? data.output_text.trim() : "";
+      if (!outputText) {
+        throw new Error("Gemini response did not include output_text.");
+      }
+
+      return parseReadingEngineV2Json(outputText);
+    }
+  };
+}
+
+function parseReadingEngineV2Json(outputText: string): unknown {
+  const trimmed = outputText.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const jsonText = fenced ? fenced[1].trim() : trimmed;
+
+  try {
+    return JSON.parse(jsonText);
+  } catch (error) {
+    throw new Error("Provider response was not valid Reading Engine v2 JSON.");
+  }
 }
 
 function createMockAiReadingProvider(): AiReadingProvider {
