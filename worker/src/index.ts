@@ -206,6 +206,8 @@ export default {
           return await handleForecast(request, env);
         case "POST /api/dev/reading-engine-v2-smoke":
           return await handleDevReadingEngineV2Smoke(request, env);
+        case "POST /api/dev/reading-engine-v2-gemini-smoke":
+          return await handleDevReadingEngineV2GeminiSmoke(request, env);
         case `POST ${API_PATHS.verifyAppleTransaction}`:
           return await handleVerifyAppleTransaction(request, env);
         case `POST ${API_PATHS.appleServerNotification}`:
@@ -776,6 +778,102 @@ async function handleForecast(request: Request, env: Env) {
     cached: false,
     content,
     effectiveDate,
+    timeframe
+  });
+}
+
+async function handleDevReadingEngineV2GeminiSmoke(request: Request, env: Env) {
+  const smokeHeader = request.headers.get("x-cosmoscope-dev-smoke");
+  if (env.APP_ENV === "production" && smokeHeader !== "reading-engine-v2") {
+    throw new HttpError(404, "Route not found.");
+  }
+
+  if (!env.GEMINI_API_KEY) {
+    throw new HttpError(400, "Gemini smoke test requires GEMINI_API_KEY to be configured in the Worker environment.");
+  }
+
+  const body = await readJson<DevReadingEngineV2SmokeRequest>(request);
+  const timeframe = body.timeframe ?? "daily";
+
+  if (!["daily", "weekly", "monthly", "yearly"].includes(timeframe)) {
+    throw new HttpError(400, "Unsupported timeframe.");
+  }
+
+  const effectiveDate = getEffectiveDate(timeframe);
+  const chart: ChartPayload = {
+    accuracy: {
+      engine: "mock",
+      houses: "mock",
+      planets: "mock"
+    },
+    bigThree: {
+      moon: "Libra",
+      rising: "Pisces",
+      sun: "Sagittarius"
+    },
+    birth: {
+      date: "1983-11-30",
+      instantUtc: "1983-11-30T18:18:00.000Z",
+      latitude: 33.9528472,
+      longitude: -84.5496148,
+      place: "Marietta, Georgia, United States",
+      time: "13:18",
+      timezone: "America/New_York",
+      unknownBirthTime: false
+    },
+    dominantTransit: {
+      aspect: "Trine",
+      exactness: 1.2,
+      natalBody: "Mercury",
+      natalSign: "Sagittarius",
+      orb: 1.2,
+      transitBody: "Venus",
+      transitSign: "Leo"
+    },
+    planets: [],
+    transits: [],
+    wheel: {
+      ascendant: null,
+      midheaven: null
+    }
+  };
+
+  const entitlements: EntitlementsRow = {
+    active_until: null,
+    forecast_monthly_unlocked: true,
+    lovescope_unlocked: false,
+    premium_active: true,
+    premium_source: "admin",
+    revenuecat_active: false,
+    starscope_unlocked: false,
+    stripe_active: false,
+    updated_at: new Date().toISOString(),
+    yearly_blueprint_unlocked: true
+  };
+
+  const smokeEnv: Env = {
+    ...env,
+    AI_READING_PROVIDER: "gemini",
+    ENABLE_AI_READINGS: "true",
+    READING_ENGINE_VERSION: "v2"
+  };
+
+  const content = await buildForecastContent({
+    chart,
+    displayName: body.displayName?.trim() || "Jeff",
+    effectiveDate,
+    entitlements,
+    env: smokeEnv,
+    timeframe,
+    hasChart: true
+  });
+
+  return json({
+    chart: chart.bigThree,
+    content,
+    effectiveDate,
+    engine: isReadingEngineV2CachedContent(content) ? "v2_gemini" : "v1_fallback",
+    provider: "gemini",
     timeframe
   });
 }
