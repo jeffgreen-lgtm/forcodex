@@ -1256,13 +1256,33 @@ function isReadingEngineV2Enabled(env: Env) {
 
 function isReadingEngineV2CachedContent(content: string) {
   const normalized = content.toLowerCase().replace(/[‘’]/g, "'");
-  return (
-    normalized.includes("the pattern underneath the pattern") ||
-    normalized.includes("the week's actual story") ||
-    normalized.includes("the month’s deeper structure".replace(/[‘’]/g, "'")) ||
-    normalized.includes("the year’s larger assignment".replace(/[‘’]/g, "'"))
-  );
+
+  const explicitMockMarkers = [
+    "the pattern underneath the pattern",
+    "the week's actual story",
+    "the month's deeper structure",
+    "the year's larger assignment"
+  ];
+
+  const providerMarkers = [
+    "today's signal",
+    "pressure pattern",
+    "pressure point",
+    "the aligned path",
+    "path forward",
+    "most aligned self",
+    "honest architecture",
+    "aligned priority",
+    "filter, not a flood"
+  ];
+
+  const hasExplicitMockMarker = explicitMockMarkers.some((marker) => normalized.includes(marker));
+  const hasProviderMarker = providerMarkers.some((marker) => normalized.includes(marker));
+  const hasMove = normalized.includes("your move:");
+
+  return hasExplicitMockMarker || (hasProviderMarker && hasMove);
 }
+
 
 function resolveAiReadingProvider(env: Env): AiReadingProvider | null {
   const provider = env.AI_READING_PROVIDER?.trim().toLowerCase();
@@ -1278,12 +1298,52 @@ function resolveAiReadingProvider(env: Env): AiReadingProvider | null {
   return null;
 }
 
+type GeminiTextPart = {
+  text?: unknown;
+};
+
+type GeminiCandidate = {
+  content?: {
+    parts?: GeminiTextPart[];
+  };
+  output?: unknown;
+  text?: unknown;
+};
+
 type GeminiInteractionResponse = {
   output_text?: unknown;
+  text?: unknown;
+  candidates?: GeminiCandidate[];
   error?: {
     message?: unknown;
   };
 };
+
+function extractGeminiOutputText(data: GeminiInteractionResponse): string {
+  const directText = [data.output_text, data.text].find((value) => typeof value === "string" && value.trim().length > 0);
+
+  if (typeof directText === "string") {
+    return directText.trim();
+  }
+
+  const candidateText =
+    data.candidates
+      ?.flatMap((candidate) => {
+        const candidateDirect = [candidate.text, candidate.output].filter(
+          (value): value is string => typeof value === "string" && value.trim().length > 0
+        );
+        const partText =
+          candidate.content?.parts
+            ?.map((part) => part.text)
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0) ?? [];
+
+        return [...candidateDirect, ...partText];
+      })
+      .join("\n")
+      .trim() ?? "";
+
+  return candidateText;
+}
 
 function createGeminiReadingProvider(env: Env): AiReadingProvider {
   return {
@@ -1309,7 +1369,8 @@ function createGeminiReadingProvider(env: Env): AiReadingProvider {
           input: prompt,
           generation_config: {
             temperature: 0.7,
-            thinking_level: "low"
+            thinking_level: "low",
+            response_mime_type: "application/json"
           }
         })
       });
@@ -1321,13 +1382,73 @@ function createGeminiReadingProvider(env: Env): AiReadingProvider {
         throw new Error(message);
       }
 
-      const outputText = typeof data.output_text === "string" ? data.output_text.trim() : "";
+      const outputText = extractGeminiOutputText(data);
       if (!outputText) {
-        throw new Error("Gemini response did not include output_text.");
+        throw new Error("Gemini response did not include extractable text.");
       }
 
-      return parseReadingEngineV2Json(outputText);
+      return parseReadingEngineV2ProviderOutput(outputText, input);
     }
+  };
+}
+
+function parseReadingEngineV2ProviderOutput(outputText: string, input: ReadingEngineGenerationInput): unknown {
+  try {
+    return parseReadingEngineV2Json(outputText);
+  } catch (error) {
+    return convertReadingEngineV2ProseToResult(outputText, input);
+  }
+}
+
+function convertReadingEngineV2ProseToResult(outputText: string, input: ReadingEngineGenerationInput): ReadingEngineV2Result {
+  const trimmed = outputText
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  const rawParagraphs = trimmed
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  let yourMove = "";
+  const paragraphs: string[] = [];
+
+  for (const paragraph of rawParagraphs) {
+    const moveMatch = paragraph.match(/^\*\*Your move:\*\*\s*(.+)$/is) ?? paragraph.match(/^Your move:\s*(.+)$/is);
+
+    if (moveMatch?.[1]) {
+      yourMove = moveMatch[1].trim();
+    } else {
+      paragraphs.push(paragraph);
+    }
+  }
+
+  const { moon, rising, sun } = readingEngineNames({
+    chart: input.chart,
+    displayName: input.displayName
+  });
+
+  const pressure = input.chart?.dominantTransit
+    ? `${input.chart.dominantTransit.transitBody} in ${input.chart.dominantTransit.transitSign} pressing on ${input.chart.dominantTransit.natalBody}`
+    : "the current sky";
+
+  return {
+    title:
+      input.timeframe === "daily"
+        ? "Daily decoding"
+        : input.timeframe === "weekly"
+          ? "Weekly breakdown"
+          : input.timeframe === "monthly"
+            ? "Monthly structure"
+            : "Yearly blueprint",
+    dateLabel: buildReadingEngineV2DateLabel(input.timeframe, input.effectiveDate),
+    paragraphs: paragraphs.length ? paragraphs : [trimmed],
+    signals: [sun.label, moon.label, rising.label, pressure, "path forward"],
+    yourMove:
+      yourMove ||
+      "Choose the next step that brings your timing, energy, and truth back into alignment."
   };
 }
 
@@ -1335,9 +1456,12 @@ function parseReadingEngineV2Json(outputText: string): unknown {
   const trimmed = outputText.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   const jsonText = fenced ? fenced[1].trim() : trimmed;
+  const firstBrace = jsonText.indexOf("{");
+  const lastBrace = jsonText.lastIndexOf("}");
+  const jsonCandidate = firstBrace >= 0 && lastBrace > firstBrace ? jsonText.slice(firstBrace, lastBrace + 1) : jsonText;
 
   try {
-    return JSON.parse(jsonText);
+    return JSON.parse(jsonCandidate);
   } catch (error) {
     throw new Error("Provider response was not valid Reading Engine v2 JSON.");
   }
