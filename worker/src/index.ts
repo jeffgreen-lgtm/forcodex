@@ -1357,20 +1357,25 @@ function createGeminiReadingProvider(env: Env): AiReadingProvider {
       }
 
       const model = env.AI_READING_MODEL?.trim() || "gemini-3.5-flash";
-      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-goog-api-key": env.GEMINI_API_KEY ?? ""
         },
         body: JSON.stringify({
-          model,
-          system_instruction: promptPayload.system,
-          input: prompt,
-          generation_config: {
+          systemInstruction: {
+            parts: [{ text: promptPayload.system }]
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }]
+            }
+          ],
+          generationConfig: {
             temperature: 0.7,
-            thinking_level: "low",
-            response_mime_type: "application/json"
+            responseMimeType: "application/json"
           }
         })
       });
