@@ -830,6 +830,35 @@ async function handleDevReadingEngineV2GeminiSmoke(request: Request, env: Env) {
       transitBody: "Venus",
       transitSign: "Leo"
     },
+    transitSignals: [
+      {
+        aspect: "Trine",
+        exactness: 1.2,
+        natalBody: "Mercury",
+        natalSign: "Sagittarius",
+        orb: 1.2,
+        transitBody: "Venus",
+        transitSign: "Leo"
+      },
+      {
+        aspect: "Sextile",
+        exactness: 0.64,
+        natalBody: "Moon",
+        natalSign: "Libra",
+        orb: 2.0,
+        transitBody: "Mars",
+        transitSign: "Gemini"
+      },
+      {
+        aspect: "Square",
+        exactness: 0.51,
+        natalBody: "Sun",
+        natalSign: "Sagittarius",
+        orb: 2.8,
+        transitBody: "Saturn",
+        transitSign: "Pisces"
+      }
+    ],
     planets: [],
     transits: [],
     wheel: {
@@ -922,6 +951,35 @@ async function handleDevReadingEngineV2Smoke(request: Request, env: Env) {
       transitBody: "Venus",
       transitSign: "Leo"
     },
+    transitSignals: [
+      {
+        aspect: "Trine",
+        exactness: 1.2,
+        natalBody: "Mercury",
+        natalSign: "Sagittarius",
+        orb: 1.2,
+        transitBody: "Venus",
+        transitSign: "Leo"
+      },
+      {
+        aspect: "Sextile",
+        exactness: 0.64,
+        natalBody: "Moon",
+        natalSign: "Libra",
+        orb: 2.0,
+        transitBody: "Mars",
+        transitSign: "Gemini"
+      },
+      {
+        aspect: "Square",
+        exactness: 0.51,
+        natalBody: "Sun",
+        natalSign: "Sagittarius",
+        orb: 2.8,
+        transitBody: "Saturn",
+        transitSign: "Pisces"
+      }
+    ],
     planets: [],
     transits: [],
     wheel: {
@@ -995,15 +1053,19 @@ async function handleStudioRead(request: Request, env: Env) {
   const normalizedChart = normalizeChartPayload(chart.chart as Record<string, unknown>);
   const hasChart = Boolean(normalizedChart);
   const forecastTimeframe = resolveStudioForecastTimeframe(body.readingType);
-  const dominantTransit = forecastTimeframe
-    ? await fetchDominantTransitSignal(
+  const transitSignals = forecastTimeframe
+    ? await fetchTransitSignals(
         env,
         astrologyInput,
         forecastTimeframe === "daily" ? "daily" : forecastTimeframe === "weekly" ? "weekly" : "long_range"
       )
-    : await fetchDominantTransitSignal(env, astrologyInput, "daily");
+    : await fetchTransitSignals(env, astrologyInput, "daily");
   const chartWithTransit = normalizedChart
-    ? { ...normalizedChart, dominantTransit: dominantTransit ?? undefined }
+    ? {
+        ...normalizedChart,
+        dominantTransit: transitSignals[0] ?? undefined,
+        transitSignals
+      }
     : normalizedChart;
   const forecast = forecastTimeframe
     ? buildForecastCopy({
@@ -1130,6 +1192,7 @@ type ReadingEngineV2PromptPayload = {
       moon: string;
       rising: string;
       dominantTransit?: unknown;
+      transitSignals?: unknown[];
     };
   };
   outputShape: {
@@ -1158,10 +1221,12 @@ function buildReadingEngineV2PromptPayload(input: ReadingEngineGenerationInput):
       "Generate one CosmoScope reading for the requested timeframe using only the provided chart, transit, member, and timeframe context.",
     rules: [
       "Never stop at description. Name the pattern, reveal the pressure point, and show the path forward.",
-      "Use the member's Sun, Moon, Rising, and dominant transit naturally.",
+      "Use the member's Sun, Moon, Rising, dominant transit, and supporting transit signals naturally. Do not mechanically list every signal.",
       "Preserve member agency. Do not make guaranteed predictions.",
       "Do not imitate competitors, authors, celebrities, or famous-person personas.",
       "Do not output generic horoscope filler.",
+      "Do not mechanically reuse sign-tone fragments. Rewrite them naturally and grammatically.",
+      "Avoid awkward constructions like 'the question of to find' or 'describes the central engine: to find'. If a sign drive begins with 'to', rewrite it as a natural noun phrase instead of inserting it mechanically.",
       "Do not mention being an AI, a model, a provider, or a system prompt.",
       "Return valid JSON only with title, dateLabel, paragraphs, signals, and yourMove.",
       "End with one practical Your move."
@@ -1175,7 +1240,8 @@ function buildReadingEngineV2PromptPayload(input: ReadingEngineGenerationInput):
         sun: input.chart.bigThree.sun,
         moon: input.chart.bigThree.moon,
         rising: input.chart.bigThree.rising,
-        dominantTransit: input.chart.dominantTransit
+        dominantTransit: input.chart.dominantTransit,
+        transitSignals: input.chart.transitSignals?.slice(0, 5) ?? []
       }
     },
     outputShape: {
@@ -1268,6 +1334,14 @@ function isReadingEngineV2CachedContent(content: string) {
     "today's signal",
     "pressure pattern",
     "pressure point",
+    "not one mood",
+    "it is a sequence",
+    "cleaner pattern",
+    "better timing",
+    "structurally honest",
+    "hidden maintenance",
+    "reduces hidden maintenance",
+    "stronger container",
     "the aligned path",
     "path forward",
     "most aligned self",
@@ -2245,6 +2319,7 @@ type ChartPayload = {
     unknownBirthTime?: boolean;
   };
   dominantTransit?: TransitSignal;
+  transitSignals?: TransitSignal[];
   planets?: Placement[];
   transits?: Placement[];
   wheel?: {
@@ -2533,10 +2608,10 @@ function buildForecastCopy(input: { chart: ChartPayload | null; displayName: str
   }
 
   if (input.timeframe === "monthly") {
-    return `${firstName}, this month is about structure: not the kind that makes life rigid, but the kind that lets your actual life hold more truth without spilling into constant reaction.\n\n${capitalizeFirst(sun.label)} is working through the question of ${sun.tone.drive}. That desire is not wrong, but it needs a better container. The first part of the month shows you what has been running on habit, obligation, or old momentum. Pay attention to the places that look functional from the outside but feel expensive on the inside.\n\nThe middle of the month asks for a cleaner relationship with pressure. ${signal ? `${signal.transitBody} in ${signal.transitSign} activating your ${signal.natalBody} can make growth feel urgent, but urgency is not the same thing as readiness.` : "The live transit layer points toward consolidation rather than spectacle."} Let ${moon.label} name what it actually needs: ${moon.tone.need}. That need is not a weakness. It is a diagnostic tool.\n\nBy the final stretch of the month, the practical question becomes visible: what can stay, what has to be renegotiated, and what has only survived because you kept absorbing the cost? ${capitalizeFirst(rising.label)} shows the adjustment publicly through ${rising.tone.style}. People may notice the shift before they understand it.\n\nWork and money: choose the commitment that gives your effort a cleaner return. Love and family: stop translating your needs into hints. Body and energy: protect the rhythm that keeps you from confusing depletion with devotion.\n\n**Your move:** make one structural change this month that reduces hidden maintenance. The goal is not to make life smaller; it is to stop letting noise consume the energy meant for your actual growth.`;
+    return `${firstName}, this month is about structure: not the kind that makes life rigid, but the kind that lets your actual life hold more truth without spilling into constant reaction.\n\n${capitalizeFirst(sun.label)} is working through the deeper question underneath that drive. That desire is not wrong, but it needs a better container. The first part of the month shows you what has been running on habit, obligation, or old momentum. Pay attention to the places that look functional from the outside but feel expensive on the inside.\n\nThe middle of the month asks for a cleaner relationship with pressure. ${signal ? `${signal.transitBody} in ${signal.transitSign} activating your ${signal.natalBody} can make growth feel urgent, but urgency is not the same thing as readiness.` : "The live transit layer points toward consolidation rather than spectacle."} Let ${moon.label} name what it actually needs: ${moon.tone.need}. That need is not a weakness. It is a diagnostic tool.\n\nBy the final stretch of the month, the practical question becomes visible: what can stay, what has to be renegotiated, and what has only survived because you kept absorbing the cost? ${capitalizeFirst(rising.label)} shows the adjustment publicly through ${rising.tone.style}. People may notice the shift before they understand it.\n\nWork and money: choose the commitment that gives your effort a cleaner return. Love and family: stop translating your needs into hints. Body and energy: protect the rhythm that keeps you from confusing depletion with devotion.\n\n**Your move:** make one structural change this month that reduces hidden maintenance. The goal is not to make life smaller; it is to stop letting noise consume the energy meant for your actual growth.`;
   }
 
-  return `${firstName}, the year is not asking you to become a different person. It is asking you to build a stronger container for the person you already are becoming.\n\n${capitalizeFirst(sun.label)} describes the central engine: ${sun.tone.drive}. In the year ahead, that drive needs more than inspiration. It needs standards, timing, and a structure honest enough to hold the weight of what you say you want. Anything built only on mood will ask to be rebuilt later.\n\n${capitalizeFirst(moon.label)} names the emotional contract underneath the year. It needs ${moon.tone.need}, and when that need is ignored, your system will start sending signals through fatigue, sensitivity, resentment, or over-control. The emotional work of the year is not to become unaffected. It is to stop abandoning your own weather until it becomes a storm.\n\n${capitalizeFirst(rising.label)} describes the visible arc: ${rising.tone.style}. This is how the year teaches you to enter rooms, relationships, decisions, and opportunities with less distortion. You do not need to explain every layer of yourself to be legible. You need to make choices that let the right people read the signal clearly.\n\nThe first quarter is for clearing false urgency. The second quarter is for choosing the structure that can hold real growth. The third quarter tests whether the new rhythm works under pressure. The final quarter shows what becomes possible when your ambition, emotional truth, and public presentation stop competing with one another.\n\n${signal ? `The headline transit pattern — ${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody} — gives the year its pressure point. It shows where growth will not come from forcing the issue, but from learning how to carry power with better timing.` : "The year’s strongest signal is steadiness: less performance, more discernment, fewer inherited obligations, and a cleaner relationship with what you are actually here to build."}\n\n**Your move:** choose the life structure that can still respect you when things get busy, emotional, or uncertain. That is the structure worth building the year around.`;
+  return `${firstName}, the year is not asking you to become a different person. It is asking you to build a stronger container for the person you already are becoming.\n\n${capitalizeFirst(sun.label)} describes the central engine of the year. In the year ahead, that drive needs more than inspiration. It needs standards, timing, and a structure honest enough to hold the weight of what you say you want. Anything built only on mood will ask to be rebuilt later.\n\n${capitalizeFirst(moon.label)} names the emotional contract underneath the year. It needs ${moon.tone.need}, and when that need is ignored, your system will start sending signals through fatigue, sensitivity, resentment, or over-control. The emotional work of the year is not to become unaffected. It is to stop abandoning your own weather until it becomes a storm.\n\n${capitalizeFirst(rising.label)} describes the visible arc: ${rising.tone.style}. This is how the year teaches you to enter rooms, relationships, decisions, and opportunities with less distortion. You do not need to explain every layer of yourself to be legible. You need to make choices that let the right people read the signal clearly.\n\nThe first quarter is for clearing false urgency. The second quarter is for choosing the structure that can hold real growth. The third quarter tests whether the new rhythm works under pressure. The final quarter shows what becomes possible when your ambition, emotional truth, and public presentation stop competing with one another.\n\n${signal ? `The headline transit pattern — ${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody} — gives the year its pressure point. It shows where growth will not come from forcing the issue, but from learning how to carry power with better timing.` : "The year’s strongest signal is steadiness: less performance, more discernment, fewer inherited obligations, and a cleaner relationship with what you are actually here to build."}\n\n**Your move:** choose the life structure that can still respect you when things get busy, emotional, or uncertain. That is the structure worth building the year around.`;
   }
 
 function hasUsableForecastPlacements(chart: ChartPayload | null) {
@@ -2886,17 +2961,17 @@ async function buildAstrologyChartSnapshot(env: Env, input: AstrologyInput, disp
   };
 }
 
-async function fetchDominantTransitSignal(
+async function fetchTransitSignals(
   env: Env,
   input: AstrologyInput,
   mode: "daily" | "weekly" | "long_range"
-): Promise<TransitSignal | null> {
+): Promise<TransitSignal[]> {
   if (mode === "daily") {
     const response = await callAstrologyApi<AstrologyApiDailyTransitResponse>(env, "natal_transits/daily", {
       ...toAstrologyApiPayload(input),
       house_type: input.unknownBirthTime ? "whole_sign" : "placidus"
     });
-    return selectTransitSignal(response.transit_relation ?? [], input);
+    return selectTransitSignals(response.transit_relation ?? [], input);
   }
 
   if (mode === "weekly") {
@@ -2904,14 +2979,22 @@ async function fetchDominantTransitSignal(
       ...toAstrologyApiPayload(input),
       house_type: input.unknownBirthTime ? "whole_sign" : "placidus"
     });
-    return selectTransitSignal(response.transit_relation ?? [], input);
+    return selectTransitSignals(response.transit_relation ?? [], input);
   }
 
   const response = await callAstrologyApi<AstrologyApiLifeForecastResponse>(env, "life_forecast_report/tropical", {
     ...toAstrologyApiPayload(input),
     house_type: input.unknownBirthTime ? "whole_sign" : "placidus"
   });
-  return selectTransitSignalFromLifeForecast(response.life_forecast ?? [], input);
+  return selectTransitSignalsFromLifeForecast(response.life_forecast ?? [], input);
+}
+
+async function fetchDominantTransitSignal(
+  env: Env,
+  input: AstrologyInput,
+  mode: "daily" | "weekly" | "long_range"
+): Promise<TransitSignal | null> {
+  return fetchTransitSignals(env, input, mode).then((signals) => signals[0] ?? null);
 }
 
 function toAstrologyApiPayload(input: AstrologyInput) {
@@ -2989,6 +3072,7 @@ function normalizeAstrologyChart(response: AstrologyApiChartDataResponse, input:
       unknownBirthTime: input.unknownBirthTime
     },
     dominantTransit: undefined,
+    transitSignals: [],
     planets: flattenedPlanets,
     transits: [],
     wheel: {
@@ -3031,7 +3115,7 @@ function flattenAstrologyPlanets(houses: AstrologyApiHouse[]): Placement[] {
   return planets.sort((left, right) => left.degree - right.degree);
 }
 
-function selectTransitSignal(relations: AstrologyApiTransitRelation[], input: AstrologyInput): TransitSignal | null {
+function selectTransitSignals(relations: AstrologyApiTransitRelation[], input: AstrologyInput): TransitSignal[] {
   const chart = relations
     .map((relation) => {
       const transitBody = relation.transit_planet?.trim();
@@ -3057,18 +3141,19 @@ function selectTransitSignal(relations: AstrologyApiTransitRelation[], input: As
     .filter((value): value is TransitSignal & { weight: number } => Boolean(value))
     .sort((left, right) => right.weight - left.weight);
 
-  if (!chart.length) {
-    return null;
-  }
-
-  const { weight: _weight, ...signal } = chart[0];
-  return signal;
+  return chart.slice(0, 5).map(({ weight: _weight, ...signal }) => signal);
 }
 
-function selectTransitSignalFromLifeForecast(
+function selectTransitSignal(relations: AstrologyApiTransitRelation[], input: AstrologyInput): TransitSignal | null {
+  return selectTransitSignals(relations, input)[0] ?? null;
+}
+
+function selectTransitSignalsFromLifeForecast(
   forecasts: Array<{ date?: string; forecast?: string; planet_position?: string }>,
   input: AstrologyInput
-): TransitSignal | null {
+): TransitSignal[] {
+  const signals: TransitSignal[] = [];
+
   for (const item of forecasts) {
     const match = item.planet_position?.match(/^Transiting\s+(.+?)\s+([A-Za-z ]+)\s+Natal\s+(.+)$/i);
     if (!match) {
@@ -3082,7 +3167,7 @@ function selectTransitSignalFromLifeForecast(
       continue;
     }
 
-    return {
+    signals.push({
       aspect,
       exactness: 0,
       natalBody,
@@ -3090,10 +3175,21 @@ function selectTransitSignalFromLifeForecast(
       orb: 0,
       transitBody,
       transitSign: "current sky"
-    };
+    });
+
+    if (signals.length >= 5) {
+      break;
+    }
   }
 
-  return null;
+  return signals;
+}
+
+function selectTransitSignalFromLifeForecast(
+  forecasts: Array<{ date?: string; forecast?: string; planet_position?: string }>,
+  input: AstrologyInput
+): TransitSignal | null {
+  return selectTransitSignalsFromLifeForecast(forecasts, input)[0] ?? null;
 }
 
 function transitPriority(body: string) {
