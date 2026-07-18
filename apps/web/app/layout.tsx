@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { RecoveryRedirector } from "./RecoveryRedirector";
 import "./globals.css";
 import "./visual-correction.css";
+import "./rc4-production.css";
 
 const siteUrl = "https://cosmo.greenhenncollective.com";
 
@@ -71,7 +72,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body id="main-content">
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
