@@ -1,0 +1,188 @@
+/* CosmoScope RC1.1 visual identity correction.
+   This file intentionally overrides the legacy palette without changing product structure or behavior. */
+
+:root {
+  --cosmoscope-night: #080611;
+  --cosmoscope-amethyst: #21133b;
+  --cosmoscope-violet: #342052;
+  --cosmoscope-surface: rgba(43, 29, 63, 0.72);
+  --cosmoscope-surface-deep: rgba(20, 13, 31, 0.86);
+  --cosmoscope-cream: #f5f0e7;
+  --cosmoscope-muted: rgba(245, 240, 231, 0.72);
+  --cosmoscope-gold: #d8ba72;
+}
+
+html,
+body {
+  background:
+    radial-gradient(ellipse at 50% 12%, rgba(83, 50, 125, 0.28), transparent 38%),
+    linear-gradient(180deg, var(--cosmoscope-night) 0%, #10091d 50%, #180d2a 100%);
+}
+
+.front-door-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 76%, rgba(216, 186, 114, 0.11), transparent 28%),
+    radial-gradient(ellipse at 18% 10%, rgba(110, 68, 157, 0.2), transparent 31%),
+    radial-gradient(ellipse at 86% 17%, rgba(68, 38, 105, 0.28), transparent 34%),
+    linear-gradient(180deg, #090611 0%, #130b22 43%, #211238 100%);
+  border-color: rgba(216, 186, 114, 0.12);
+  box-shadow: 0 30px 100px rgba(5, 2, 12, 0.48);
+}
+
+.front-door-shell::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0 56%, rgba(216, 186, 114, 0.035) 70%, transparent 88%),
+    radial-gradient(ellipse at 50% 63%, rgba(149, 98, 189, 0.12), transparent 32%);
+}
+
+.front-door-shell::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 7%;
+  right: 7%;
+  top: 58%;
+  height: 1px;
+  opacity: 0.42;
+  background: linear-gradient(90deg, transparent, rgba(216, 186, 114, 0.34), transparent);
+  box-shadow: 0 0 45px rgba(216, 186, 114, 0.12);
+}
+
+.front-door-shell .hero-title,
+.front-door-shell .section-title,
+.front-door-shell .threshold-title,
+.front-door-shell .module-headline,
+.front-door-shell .reading-headline,
+.front-door-shell .aside-title,
+.front-door-shell .product-card h3 {
+  color: var(--cosmoscope-cream);
+}
+
+.front-door-shell .lede,
+.front-door-shell .section-body,
+.front-door-shell .aside-copy,
+.front-door-shell .reading-body,
+.front-door-shell .module-detail,
+.front-door-shell .product-note,
+.front-door-shell .benefit-list li,
+.front-door-shell .ritual-item p,
+.front-door-shell .calibration-list strong,
+.front-door-shell .module-summary {
+  color: var(--cosmoscope-muted);
+}
+
+.front-door-shell .opening-aside,
+.front-door-shell .module-preview,
+.front-door-shell .daily-reading {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(133, 83, 176, 0.1), transparent 34%),
+    linear-gradient(180deg, var(--cosmoscope-surface), var(--cosmoscope-surface-deep));
+  border-color: rgba(216, 186, 114, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 22px 60px rgba(3, 1, 9, 0.2);
+  backdrop-filter: blur(14px);
+}
+
+.front-door-shell .threshold-band {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(105, 61, 149, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(14, 8, 25, 0.98), rgba(31, 17, 48, 0.98));
+}
+
+.opening-band {
+  align-items: center;
+  min-height: min(820px, calc(100vh - 96px));
+  padding-block: clamp(42px, 8vh, 92px);
+}
+
+.hero-title {
+  font-size: clamp(3.2rem, 6.25vw, 5.7rem);
+  line-height: 0.99;
+  max-width: 11.5ch;
+  text-wrap: balance;
+}
+
+.hero-title span {
+  display: block;
+}
+
+.lede {
+  max-width: 39rem;
+}
+
+.opening-aside {
+  margin-top: 0;
+}
+
+.aside-title {
+  max-width: 13ch;
+  text-wrap: balance;
+}
+
+.front-door-shell .button-primary {
+  background: linear-gradient(135deg, #e2ca8a 0%, var(--cosmoscope-gold) 56%, #b88c3e 100%);
+  box-shadow: 0 14px 38px rgba(216, 186, 114, 0.2);
+  color: #160f08;
+  font-weight: 650;
+}
+
+.front-door-shell .button-secondary {
+  border-color: rgba(245, 240, 231, 0.2);
+  color: rgba(245, 240, 231, 0.78);
+}
+
+.front-door-shell .action-row .button-secondary:last-child {
+  min-height: 44px;
+  padding-inline: 10px;
+  border-color: transparent;
+  color: rgba(245, 240, 231, 0.58);
+  text-decoration: underline;
+  text-decoration-color: rgba(216, 186, 114, 0.35);
+  text-underline-offset: 5px;
+}
+
+.front-door-shell .rule {
+  opacity: 0.45;
+  background: linear-gradient(90deg, transparent, rgba(216, 186, 114, 0.2), transparent);
+}
+
+@media (max-width: 980px) {
+  .opening-band {
+    min-height: auto;
+    padding-block: 48px 24px;
+  }
+
+  .opening-aside {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .front-door-shell {
+    border-radius: 22px;
+  }
+
+  .hero-title {
+    font-size: clamp(2.85rem, 13.5vw, 4.45rem);
+    max-width: 10ch;
+  }
+
+  .front-door-shell .action-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .front-door-shell .action-row .button-secondary:last-child {
+    justify-self: center;
+    width: auto;
+  }
+}
