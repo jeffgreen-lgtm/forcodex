@@ -1,137 +1,147 @@
-const briefDetails = [
-  ["The climate", "The emotional and practical tone shaping your day."],
-  ["The pressure point", "Where the day may ask more patience, honesty, or restraint."],
-  ["Your move", "One grounded action that helps you work with the moment."],
+const trustPoints = [
+  {
+    icon: "lock",
+    title: "Private by design",
+    body: "Your data stays yours. Always."
+  },
+  {
+    icon: "compass",
+    title: "Precise & personal",
+    body: "Built from your exact birth data, not generic horoscopes."
+  },
+  {
+    icon: "spark",
+    title: "For preparation",
+    body: "Not prediction. Guidance for better decisions."
+  }
 ];
 
-const trustPoints = [
-  "Built from your exact birth date, time, and place",
-  "Translated into direct, useful language",
-  "Designed for preparation—not prediction",
+const advantagePoints = [
+  {
+    icon: "sun",
+    title: "Start with direction",
+    body: "See the day’s theme and the energies shaping your decisions."
+  },
+  {
+    icon: "moon",
+    title: "Act with confidence",
+    body: "Understand the pressure points and where your best moves are."
+  },
+  {
+    icon: "star",
+    title: "Stay aligned",
+    body: "Make choices that fit your life, not just the moment."
+  }
 ];
+
+function Symbol({ name }: { name: string }) {
+  return <span className={`symbol symbol-${name}`} aria-hidden="true" />;
+}
 
 export default function HomePage() {
   return (
     <main className="cosmoscope-home">
-      <nav className="cosmoscope-nav" aria-label="Primary navigation">
-        <a className="cosmoscope-wordmark" href="/" aria-label="CosmoScope home">
-          <span className="wordmark-orbit" aria-hidden="true" />
-          CosmoScope
-        </a>
-        <a className="nav-login" href="/app">Log in</a>
-      </nav>
+      <section className="hero-shell">
+        <nav className="cosmoscope-nav" aria-label="Primary navigation">
+          <a className="cosmoscope-wordmark" href="/" aria-label="CosmoScope home">
+            <span className="wordmark-orbit" aria-hidden="true"><span /></span>
+            <span>CosmoScope</span>
+          </a>
+          <div className="nav-actions">
+            <a className="nav-login" href="/app">Log in</a>
+            <a className="nav-cta" href="/app">Build my CosmoScope</a>
+          </div>
+        </nav>
 
-      <section className="cosmoscope-hero">
-        <div className="hero-atmosphere" aria-hidden="true">
-          <div className="hero-moon" />
-          <div className="hero-horizon" />
-          <span className="star star-one" />
-          <span className="star star-two" />
-          <span className="star star-three" />
-          <span className="star star-four" />
+        <div className="hero-art" aria-hidden="true">
+          <div className="hero-orbit"><span className="orbit-dot dot-one" /><span className="orbit-dot dot-two" /></div>
+          <div className="hero-moon"><span className="moon-light" /><span className="moon-shadow" /></div>
+          <span className="hero-star hero-star-one" />
+          <span className="hero-star hero-star-two" />
+          <span className="hero-star hero-star-three" />
+          <span className="hero-star hero-star-four" />
+          <div className="dawn-glow" />
+          <div className="dawn-sun" />
+          <div className="mountain mountain-back" />
+          <div className="mountain mountain-mid" />
+          <div className="mountain mountain-front" />
         </div>
 
-        <div className="hero-content fade-up">
-          <p className="hero-eyebrow">Your chart. Today&apos;s sky. One clear way forward.</p>
+        <div className="hero-copy">
+          <p className="hero-eyebrow">Your chart. Today&apos;s sky.</p>
           <h1>The most beautiful way to begin your day.</h1>
           <p className="hero-lede">
             CosmoScope turns the current astrological climate into personal guidance you can actually use—so you meet the day with more clarity, confidence, and calm.
           </p>
-          <div className="hero-actions">
-            <a className="hero-primary" href="/app">Build my CosmoScope</a>
-            <span className="hero-note">Your first Today&apos;s Brief is free.</span>
-          </div>
-        </div>
-
-        <div className="hero-proof fade-up delay-2" aria-label="CosmoScope principles">
-          {trustPoints.map((point) => <span key={point}>{point}</span>)}
+          <a className="primary-cta" href="/app"><Symbol name="sun" />Build my CosmoScope</a>
+          <p className="hero-note">Your first Today&apos;s Brief is free. <span aria-hidden="true">✦</span></p>
         </div>
       </section>
 
-      <section className="brief-section" id="todays-brief">
-        <div className="brief-intro">
-          <p className="section-kicker">Today&apos;s Brief</p>
-          <h2>Not a horoscope. A personal morning advantage.</h2>
-          <p>
-            The same sky affects everyone differently. CosmoScope reads today through your natal chart, then translates the strongest signal into a calm, useful plan.
-          </p>
-        </div>
+      <section className="trust-strip" aria-label="CosmoScope principles">
+        {trustPoints.map((point) => (
+          <article key={point.title}>
+            <Symbol name={point.icon} />
+            <div>
+              <h2>{point.title}</h2>
+              <p>{point.body}</p>
+            </div>
+          </article>
+        ))}
+      </section>
 
+      <section className="advantage-section" id="todays-brief">
         <article className="brief-card">
           <div className="brief-card-topline">
             <div>
               <p className="brief-date">Saturday · July 18</p>
               <p className="brief-for">Prepared for Jeff</p>
             </div>
-            <span className="brief-sun" aria-hidden="true">☼</span>
+            <Symbol name="sun" />
           </div>
-          <p className="brief-label">Today&apos;s central theme</p>
-          <h3>Protect the pace that keeps you clear.</h3>
+          <div className="brief-divider" />
+          <p className="brief-label">Today&apos;s theme</p>
+          <h2>Protect the pace that keeps you clear.</h2>
           <p className="brief-copy">
             The day may reward discernment more than speed. You do not need to answer every demand as it arrives. Notice what creates urgency without creating value, then return your attention to the choice that will still matter tonight.
           </p>
+          <div className="brief-divider" />
           <div className="brief-move">
             <span>Your move</span>
             <strong>Choose one meaningful priority before the outside world chooses three for you.</strong>
           </div>
         </article>
-      </section>
 
-      <section className="translation-section">
-        <div className="translation-heading">
-          <p className="section-kicker">How it becomes useful</p>
-          <h2>Complex astrology, translated into the three things you need today.</h2>
-        </div>
-        <div className="translation-grid">
-          {briefDetails.map(([title, body], index) => (
-            <article key={title}>
-              <span>0{index + 1}</span>
-              <h3>{title}</h3>
-              <p>{body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="personal-section">
-        <div className="personal-orbit" aria-hidden="true">
-          <span className="orbit-core">You</span>
-          <span className="orbit-label orbit-sun">Sun</span>
-          <span className="orbit-label orbit-moon">Moon</span>
-          <span className="orbit-label orbit-rising">Rising</span>
-        </div>
-        <div className="personal-copy">
-          <p className="section-kicker">Personal by design</p>
-          <h2>Your guidance begins where generic astrology ends.</h2>
-          <p>
-            Your Sun, Moon, Rising, houses, and current transits create a pattern that belongs to you. Exact birth data gives CosmoScope the context to explain not only what is active, but where you are most likely to feel it.
-          </p>
-          <a className="text-link" href="/app">See what today means for me <span aria-hidden="true">→</span></a>
-        </div>
-      </section>
-
-      <section className="depth-section">
-        <div className="depth-copy">
-          <p className="section-kicker">Go deeper when you need to</p>
-          <h2>A daily ritual first. More context when life asks for it.</h2>
-          <p>
-            Begin with Today&apos;s Brief. Open weekly, monthly, relationship, and decision-focused guidance only when the moment deserves a wider view.
-          </p>
-        </div>
-        <div className="depth-list" aria-label="Premium guidance options">
-          <span>Weekly perspective</span>
-          <span>Monthly forecast</span>
-          <span>Relationship insight</span>
-          <span>Decision support</span>
-          <span>Yearly blueprint</span>
+        <div className="advantage-copy">
+          <p className="section-kicker">Your morning advantage</p>
+          <h2>Clarity changes everything.</h2>
+          <div className="advantage-list">
+            {advantagePoints.map((point) => (
+              <article key={point.title}>
+                <div className="advantage-icon"><Symbol name={point.icon} /></div>
+                <div>
+                  <h3>{point.title}</h3>
+                  <p>{point.body}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+          <a className="text-link" href="/app">See how it works <span aria-hidden="true">→</span></a>
         </div>
       </section>
 
       <section className="final-cta">
-        <p className="section-kicker">Meet the day differently</p>
-        <h2>Begin with the sky.<br />Move with yourself.</h2>
-        <a className="hero-primary" href="/app">Build my CosmoScope</a>
-        <p className="final-note">Free to begin. Exact birth time helps, but is not required.</p>
+        <div className="final-orbit" aria-hidden="true">
+          <span className="final-orbit-dot dot-a" />
+          <span className="final-orbit-dot dot-b" />
+          <span className="final-orbit-dot dot-c" />
+          <span className="final-orbit-dot dot-d" />
+        </div>
+        <div className="final-star"><Symbol name="star" /></div>
+        <h2>Your day. Understood.</h2>
+        <p>Beautiful guidance. Practical insight.<br />All personalized just for you.</p>
+        <a className="primary-cta" href="/app"><Symbol name="sun" />Build my CosmoScope</a>
+        <p className="final-note"><span>✓ Free Today&apos;s Brief</span><span>•</span><span>No credit card required</span></p>
       </section>
 
       <footer className="cosmoscope-footer">
