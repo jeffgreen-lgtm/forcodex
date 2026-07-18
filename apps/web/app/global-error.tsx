@@ -1,5 +1,8 @@
 "use client";
 
+import "./globals.css";
+import "./rc4-production.css";
+
 export default function GlobalError({ reset }: { reset: () => void }) {
   return (
     <html lang="en">
