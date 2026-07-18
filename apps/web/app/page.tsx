@@ -1,3 +1,5 @@
+import "./rc2-polish.css";
+
 const trustPoints = [
   {
     icon: "lock",
