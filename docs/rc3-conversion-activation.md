@@ -1,46 +1,35 @@
 # CosmoScope RC3 — Conversion and Activation
 
-Status: In progress
+Status: Ready for visual review
 
 ## Objective
 
 Turn the approved RC2 experience into a clearer path from first impression to first useful Today’s Brief without weakening the premium visual identity.
 
-## Locked baseline
+## Implemented
 
-RC1 structure and RC2 interaction polish are approved. RC3 must not redesign the landing page, replace the established visual language, or add decorative scope.
+- Reframed the primary action around the user’s first Today’s Brief.
+- Added immediate reassurance: free first brief, no credit card, approximately two minutes.
+- Reworked trust messaging around privacy, precision, and immediate usefulness.
+- Added a three-step activation explanation before the sample reading.
+- Clarified that setup uses exact birth details rather than a quiz or generic personality test.
+- Repositioned the sample reading as the first-value moment rather than only a product demonstration.
+- Added a dedicated landing-to-signup source URL.
+- Preserved the approved RC2 visual and interaction baseline.
+- Added responsive and reduced-motion treatment for the new activation section.
 
-## Workstreams
+## Review path
 
-1. Conversion promise
-   - Make the primary CTA communicate the free first-value outcome.
-   - Keep reassurance about no credit card and privacy close to the decision point.
-   - Remove conflicting or vague calls to action.
-
-2. Landing-to-app continuity
-   - Preserve the same promise and tone when the visitor reaches `/app`.
-   - Avoid a visual or emotional drop between marketing and onboarding.
-   - Make it immediately clear what information is needed and why.
-
-3. Signup completion
-   - Keep the intake progressive and calm.
-   - Improve progress language, completion cues, validation, and recovery.
-   - Do not create unnecessary fields or steps.
-
-4. First-value activation
-   - After account creation, prioritize loading and displaying Today’s Brief.
-   - Explain any loading or fallback state without exposing implementation language.
-   - Make the first useful action unmistakable.
-
-5. Measurement readiness
-   - Define events for landing CTA, signup start, each completed intake step, account creation, Today’s Brief load, and first return.
-   - Do not add third-party analytics during this phase unless explicitly approved.
+1. Read the hero CTA and reassurance without scrolling.
+2. Scroll through the three-step activation explanation.
+3. Review how the sample Today’s Brief supports the signup decision.
+4. Follow each primary CTA into `/app` and confirm the transition feels expected.
+5. Review desktop and mobile layouts.
 
 ## Exit criteria
 
-- The primary CTA and onboarding promise agree.
-- A new visitor understands what they receive before signup.
-- The intake has no avoidable uncertainty or dead ends.
-- Successful signup opens the user’s Today’s Brief as the first meaningful result.
-- Error and fallback language remains calm, clear, and user-facing.
-- Desktop and mobile conversion paths are reviewable without production deployment.
+- The user understands what they receive before clicking.
+- The user understands what information setup requires.
+- The user sees value before pricing or premium features.
+- The experience remains calm and non-manipulative.
+- RC2 visual identity remains intact.
