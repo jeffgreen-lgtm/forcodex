@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { RecoveryRedirector } from "./RecoveryRedirector";
 import "./globals.css";
+import "./visual-correction.css";
 
 export const metadata: Metadata = {
   title: "CosmoScope",
