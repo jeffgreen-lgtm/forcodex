@@ -1,0 +1,101 @@
+.skip-link {
+  background: #f0cf83;
+  border-radius: 999px;
+  color: #17111f;
+  font-size: 0.9rem;
+  font-weight: 700;
+  left: 16px;
+  padding: 10px 16px;
+  position: fixed;
+  top: 12px;
+  transform: translateY(-180%);
+  transition: transform 160ms ease;
+  z-index: 10000;
+}
+
+.skip-link:focus {
+  outline: 3px solid #ffffff;
+  outline-offset: 3px;
+  transform: translateY(0);
+}
+
+.production-state {
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(124, 91, 168, 0.26), transparent 34%),
+    linear-gradient(180deg, #0c0912 0%, #171020 100%);
+  color: #f7f3ee;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.production-state__card {
+  background: rgba(24, 17, 33, 0.82);
+  border: 1px solid rgba(240, 207, 131, 0.2);
+  border-radius: 28px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.32);
+  max-width: 620px;
+  padding: clamp(32px, 6vw, 56px);
+  width: 100%;
+}
+
+.production-state__eyebrow {
+  color: rgba(247, 243, 238, 0.62);
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.production-state h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(2.4rem, 8vw, 4.8rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+  margin-top: 14px;
+}
+
+.production-state p:not(.production-state__eyebrow) {
+  color: rgba(247, 243, 238, 0.76);
+  line-height: 1.7;
+  margin: 20px auto 0;
+  max-width: 42ch;
+}
+
+.production-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.production-state__button {
+  align-items: center;
+  border: 1px solid rgba(240, 207, 131, 0.4);
+  border-radius: 999px;
+  display: inline-flex;
+  font-weight: 650;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+}
+
+.production-state__button--primary {
+  background: #f0cf83;
+  color: #17111f;
+}
+
+.production-state__button--secondary {
+  background: transparent;
+  color: #f7f3ee;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-link {
+    transition: none;
+  }
+}
