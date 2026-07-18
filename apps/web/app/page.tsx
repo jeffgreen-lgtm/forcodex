@@ -1,249 +1,143 @@
-import { PREMIUM_PRODUCTS } from "@cosmoscope/api";
-
-const subscriptionProducts = Object.values(PREMIUM_PRODUCTS).filter((product) => product.kind === "subscription");
-const unlockProducts = Object.values(PREMIUM_PRODUCTS).filter((product) => product.kind === "one_time_unlock");
-
-const onboardingScreens = [
-  {
-    index: "01",
-    title: "Birth place",
-    body: "Start with the exact place. The better the location data, the cleaner the reading."
-  },
-  {
-    index: "02",
-    title: "Birth date",
-    body: "One clear date gives the chart its timing without turning setup into a chore."
-  },
-  {
-    index: "03",
-    title: "Birth time",
-    body: "Use the exact time if you know it. If you do not, CosmoScope will still give you a usable read."
-  },
-  {
-    index: "04",
-    title: "Reveal",
-    body: "Core placements first. Today’s Brief next. Deeper guidance opens when you want more context."
-  }
+const briefDetails = [
+  ["The climate", "The emotional and practical tone shaping your day."],
+  ["The pressure point", "Where the day may ask more patience, honesty, or restraint."],
+  ["Your move", "One grounded action that helps you work with the moment."],
 ];
 
-const modulePreview = [
-  {
-    eyebrow: "Your Sun",
-    headline: "Aries",
-    summary: "Impatient, bright, singular.",
-    detail: "This is the part of you that decides what matters and where your effort naturally goes first.",
-    locked: false
-  },
-  {
-    eyebrow: "Your Moon",
-    headline: "Scorpio",
-    summary: "Private, exacting, magnetic.",
-    detail: "This is the emotional pattern underneath the surface: what stings, what settles you, and what stays hidden until it matters.",
-    locked: true
-  },
-  {
-    eyebrow: "Your Rising",
-    headline: "Virgo",
-    summary: "Composed, observant, selective.",
-    detail: "This is the version of you other people meet first and the tone you set before much is said.",
-    locked: true
-  }
+const trustPoints = [
+  "Built from your exact birth date, time, and place",
+  "Translated into direct, useful language",
+  "Designed for preparation—not prediction",
 ];
-
-const thresholdBenefits = [
-  "Longer daily guidance with stronger context",
-  "Weekly, monthly, and yearly structure mapped to your chart",
-  "Focused one-time reads when a relationship or decision needs more depth"
-];
-
-const subscriptionNotes: Record<string, string> = {
-  monthly_pass: "The full member layer: daily climate, deep reads, and recurring guidance.",
-  annual_pass: "The calmest long-view option, with the strongest value for committed members."
-};
-
-const unlockNotes: Record<string, string> = {
-  lovescope_unlock: "Relationship insight when the question is specific and the stakes feel personal.",
-  starscope_unlock: "A focused answer when timing, choice, or tension needs a sharper read.",
-  forecast_monthly: "A single month of clearer context without committing to a full membership.",
-  yearly_blueprint: "The long-range map for users who want the whole arc, not just the mood."
-};
 
 export default function HomePage() {
   return (
-    <main className="page-shell front-door-shell">
-      <section className="opening-band front-door-opening">
-        <div className="opening-copy fade-up">
-          <p className="timestamp">Personal astrological guidance from exact birth data.</p>
-          <h1 className="hero-title">
-            <span>Understand today&apos;s astrological weather.</span>
-            <span>Know how to move through it.</span>
-          </h1>
-          <p className="lede">
-            CosmoScope connects your natal chart with the current sky to show what deserves your attention today - and
-            how to meet it with greater clarity, confidence, and calm.
+    <main className="cosmoscope-home">
+      <nav className="cosmoscope-nav" aria-label="Primary navigation">
+        <a className="cosmoscope-wordmark" href="/" aria-label="CosmoScope home">
+          <span className="wordmark-orbit" aria-hidden="true" />
+          CosmoScope
+        </a>
+        <a className="nav-login" href="/app">Log in</a>
+      </nav>
+
+      <section className="cosmoscope-hero">
+        <div className="hero-atmosphere" aria-hidden="true">
+          <div className="hero-moon" />
+          <div className="hero-horizon" />
+          <span className="star star-one" />
+          <span className="star star-two" />
+          <span className="star star-three" />
+          <span className="star star-four" />
+        </div>
+
+        <div className="hero-content fade-up">
+          <p className="hero-eyebrow">Your chart. Today&apos;s sky. One clear way forward.</p>
+          <h1>The most beautiful way to begin your day.</h1>
+          <p className="hero-lede">
+            CosmoScope turns the current astrological climate into personal guidance you can actually use—so you meet the day with more clarity, confidence, and calm.
           </p>
-          <div className="action-row">
-            <a className="button-primary" href="/app">
-              Build my CosmoScope
-            </a>
-            <a className="button-secondary" href="/app">
-              Log in
-            </a>
-            <a className="button-secondary" href="#threshold">
-              Explore Cosmic Pass
-            </a>
+          <div className="hero-actions">
+            <a className="hero-primary" href="/app">Build my CosmoScope</a>
+            <span className="hero-note">Your first Today&apos;s Brief is free.</span>
           </div>
         </div>
 
-        <aside className="opening-aside fade-up delay-2">
-          <p className="caption">What opens first</p>
-          <h2 className="aside-title">Core placements. Today&apos;s Brief. Then deeper structure.</h2>
-          <p className="aside-copy">
-            Start with the essentials, then move into longer guidance when the day needs more context.
-          </p>
-          <ul className="calibration-list">
-            <li>
-              <span>Core placements</span>
-              <strong>Sun, Moon, and Rising translated into direct language</strong>
-            </li>
-            <li>
-              <span>Today&apos;s Brief</span>
-              <strong>A free reading built from the current astrological climate</strong>
-            </li>
-            <li>
-              <span>Deeper work</span>
-              <strong>Weekly, monthly, yearly, and one-time reads when the moment needs more depth</strong>
-            </li>
-          </ul>
-        </aside>
+        <div className="hero-proof fade-up delay-2" aria-label="CosmoScope principles">
+          {trustPoints.map((point) => <span key={point}>{point}</span>)}
+        </div>
       </section>
 
-      <div className="rule" />
-
-      <section className="ritual-band" id="ritual">
-        <div className="section-copy">
-          <p className="caption">How it opens</p>
-          <h2 className="section-title">One question at a time, so the setup feels human.</h2>
-          <p className="section-body">
-            Exact place, date, and time do more for the reading than extra ornament ever will. The setup should feel
-            measured, calm, and easy to finish.
+      <section className="brief-section" id="todays-brief">
+        <div className="brief-intro">
+          <p className="section-kicker">Today&apos;s Brief</p>
+          <h2>Not a horoscope. A personal morning advantage.</h2>
+          <p>
+            The same sky affects everyone differently. CosmoScope reads today through your natal chart, then translates the strongest signal into a calm, useful plan.
           </p>
         </div>
 
-        <ol className="ritual-list">
-          {onboardingScreens.map((screen) => (
-            <li key={screen.index} className="ritual-item">
-              <span className="ritual-index">{screen.index}</span>
-              <div>
-                <strong>{screen.title}</strong>
-                <p>{screen.body}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <article className="brief-card">
+          <div className="brief-card-topline">
+            <div>
+              <p className="brief-date">Saturday · July 18</p>
+              <p className="brief-for">Prepared for Jeff</p>
+            </div>
+            <span className="brief-sun" aria-hidden="true">☼</span>
+          </div>
+          <p className="brief-label">Today&apos;s central theme</p>
+          <h3>Protect the pace that keeps you clear.</h3>
+          <p className="brief-copy">
+            The day may reward discernment more than speed. You do not need to answer every demand as it arrives. Notice what creates urgency without creating value, then return your attention to the choice that will still matter tonight.
+          </p>
+          <div className="brief-move">
+            <span>Your move</span>
+            <strong>Choose one meaningful priority before the outside world chooses three for you.</strong>
+          </div>
+        </article>
       </section>
 
-      <div className="rule" />
-
-      <section className="daily-band" id="daily-layer">
-        <div className="section-copy">
-          <p className="caption">Free daily layer</p>
-          <h2 className="section-title">Useful guidance before you go deeper.</h2>
-          <p className="section-body">
-            Today’s Brief gives you the central theme, what to notice, and one practical move before anything else asks
-            for your attention.
-          </p>
-
-          <article className="daily-reading">
-            <p className="reading-kicker">Today</p>
-            <h3 className="reading-headline">The day asks for cleaner timing, not louder effort.</h3>
-            <p className="reading-body">
-              Your attention is sharper than usual, but impatience is louder too. <strong>Your move:</strong> finish
-              what matters before the day teaches you through avoidable noise.
-            </p>
-          </article>
+      <section className="translation-section">
+        <div className="translation-heading">
+          <p className="section-kicker">How it becomes useful</p>
+          <h2>Complex astrology, translated into the three things you need today.</h2>
         </div>
-
-        <div className="module-stack" aria-label="Big three preview">
-          {modulePreview.map((module) => (
-            <article key={module.eyebrow} className={`module-preview${module.locked ? " is-locked" : ""}`}>
-              <div className="module-topline">
-                <p className="module-eyebrow">{module.eyebrow}</p>
-                {module.locked ? <span className="lock-label">Threshold</span> : null}
-              </div>
-              <h3 className="module-headline">{module.headline}</h3>
-              <p className="module-summary">{module.summary}</p>
-              <p className="module-detail">{module.detail}</p>
+        <div className="translation-grid">
+          {briefDetails.map(([title, body], index) => (
+            <article key={title}>
+              <span>0{index + 1}</span>
+              <h3>{title}</h3>
+              <p>{body}</p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="threshold-band" id="threshold">
-        <div className="threshold-inner">
-          <div className="threshold-copy">
-            <p className="caption caption-inverse">Threshold</p>
-            <h2 className="threshold-title">Go deeper when the lighter read is no longer enough.</h2>
-            <p className="threshold-body">
-              Cosmic Pass keeps the free daily rhythm intact, then opens the longer reads that benefit from repetition,
-              pattern, and more emotional range. One-time unlocks stay available for moments that are too specific for
-              a broad daily read to handle cleanly.
-            </p>
-            <ul className="benefit-list">
-              {thresholdBenefits.map((benefit) => (
-                <li key={benefit}>{benefit}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="threshold-products">
-            <div className="product-section">
-              <p className="caption caption-inverse">Cosmic Pass</p>
-              <div className="product-grid">
-                {subscriptionProducts.map((product) => (
-                  <article key={product.key} className="product-card product-card-inverse">
-                    <div className="product-header">
-                      <span className="product-kind">{product.key === "annual_pass" ? "Best value" : "Membership"}</span>
-                      <h3>{product.title}</h3>
-                    </div>
-                    <p className="product-price">{product.priceLabel}</p>
-                    <p className="product-note">{subscriptionNotes[product.key] ?? "Premium access across the member layer."}</p>
-                  </article>
-                ))}
-              </div>
-            </div>
-
-            <div className="product-section">
-              <p className="caption caption-inverse">One-time unlocks</p>
-              <div className="product-grid product-grid-compact">
-                {unlockProducts.map((product) => (
-                  <article key={product.key} className="product-card product-card-inverse">
-                    <div className="product-header">
-                      <span className="product-kind">One-time</span>
-                      <h3>{product.title}</h3>
-                    </div>
-                    <p className="product-price">{product.priceLabel}</p>
-                    <p className="product-note">{unlockNotes[product.key] ?? "Focused premium depth for a single moment."}</p>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
+      <section className="personal-section">
+        <div className="personal-orbit" aria-hidden="true">
+          <span className="orbit-core">You</span>
+          <span className="orbit-label orbit-sun">Sun</span>
+          <span className="orbit-label orbit-moon">Moon</span>
+          <span className="orbit-label orbit-rising">Rising</span>
+        </div>
+        <div className="personal-copy">
+          <p className="section-kicker">Personal by design</p>
+          <h2>Your guidance begins where generic astrology ends.</h2>
+          <p>
+            Your Sun, Moon, Rising, houses, and current transits create a pattern that belongs to you. Exact birth data gives CosmoScope the context to explain not only what is active, but where you are most likely to feel it.
+          </p>
+          <a className="text-link" href="/app">See what today means for me <span aria-hidden="true">→</span></a>
         </div>
       </section>
 
-      <div className="rule" />
-
-      <section className="closing-band">
-        <div className="section-copy closing-copy">
-          <p className="caption">Why it matters</p>
-          <h2 className="section-title">A chart is only useful if it becomes guidance you can act on.</h2>
-          <p className="section-body">
-            CosmoScope turns the pattern into language you can use, so the reading becomes preparation rather than
-            performance.
+      <section className="depth-section">
+        <div className="depth-copy">
+          <p className="section-kicker">Go deeper when you need to</p>
+          <h2>A daily ritual first. More context when life asks for it.</h2>
+          <p>
+            Begin with Today&apos;s Brief. Open weekly, monthly, relationship, and decision-focused guidance only when the moment deserves a wider view.
           </p>
         </div>
+        <div className="depth-list" aria-label="Premium guidance options">
+          <span>Weekly perspective</span>
+          <span>Monthly forecast</span>
+          <span>Relationship insight</span>
+          <span>Decision support</span>
+          <span>Yearly blueprint</span>
+        </div>
       </section>
+
+      <section className="final-cta">
+        <p className="section-kicker">Meet the day differently</p>
+        <h2>Begin with the sky.<br />Move with yourself.</h2>
+        <a className="hero-primary" href="/app">Build my CosmoScope</a>
+        <p className="final-note">Free to begin. Exact birth time helps, but is not required.</p>
+      </section>
+
+      <footer className="cosmoscope-footer">
+        <span>CosmoScope</span>
+        <span>Preparation over prediction.</span>
+      </footer>
     </main>
   );
 }
