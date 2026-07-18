@@ -116,20 +116,19 @@ export function DemoExperience({ products }: DemoExperienceProps) {
         <a href="/" className="demo-wordmark">
           CosmoScope
         </a>
-        <span className="demo-pill">Friend preview - payments disabled</span>
+        <span className="demo-pill">Guided preview</span>
       </header>
 
       {step === "opening" ? (
         <section className="demo-screen demo-opening fade-up">
-          <p className="timestamp">Demo mode - all premium reads unlocked</p>
+          <p className="timestamp">Guided CosmoScope preview</p>
           <h1 className="demo-hero">Let&apos;s build your cosmic blueprint.</h1>
           <p className="demo-body">
-            This preview walks through the product feel, daily reading, reveal, LoveScope, StarScope, and premium
-            threshold without charging a card.
+            Move through the intake, reveal, daily brief, LoveScope, StarScope, and the deeper reading threshold.
           </p>
           <div className="action-row">
             <button className="button-primary" type="button" onClick={() => setStep("place")}>
-              Begin demo
+              Begin
             </button>
             <button className="button-secondary" type="button" onClick={() => setStep("home")}>
               Skip to member home
@@ -170,7 +169,7 @@ export function DemoExperience({ products }: DemoExperienceProps) {
             <span>Date</span>
             <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
           </label>
-          <p className="demo-help">The live app will validate future dates and cache the final chart permanently.</p>
+          <p className="demo-help">Use the date as carefully as you can. Small details make the reading cleaner.</p>
           <div className="demo-footer-actions">
             <button className="button-secondary" type="button" onClick={() => setStep("place")}>
               Back
@@ -207,7 +206,7 @@ export function DemoExperience({ products }: DemoExperienceProps) {
               Back
             </button>
             <button className="button-primary" type="button" onClick={startLoading}>
-              Generate preview
+              Continue
             </button>
           </div>
         </section>
@@ -230,7 +229,7 @@ export function DemoExperience({ products }: DemoExperienceProps) {
           <div className="demo-section-head">
             <p className="caption">Big three reveal</p>
             <h1 className="demo-question">The first layer is intentionally brief.</h1>
-            <p className="demo-body">Tap a placement to expand it. Premium depth arrives through intent, not clutter.</p>
+            <p className="demo-body">Tap a placement to expand it. Deeper guidance opens when you want more context.</p>
           </div>
           <div className="demo-module-list">
             {revealModules.map((module) => (
@@ -257,7 +256,7 @@ export function DemoExperience({ products }: DemoExperienceProps) {
               Back
             </button>
             <button className="button-primary" type="button" onClick={() => setStep("home")}>
-              Enter member home
+              Enter Today’s Brief
             </button>
           </div>
         </section>
@@ -291,7 +290,7 @@ export function DemoExperience({ products }: DemoExperienceProps) {
               Back to reveal
             </button>
             <button className="button-primary" type="button" onClick={() => setStep("threshold")}>
-              Preview premium threshold
+              Explore Cosmic Pass
             </button>
           </div>
         </section>
@@ -301,10 +300,9 @@ export function DemoExperience({ products }: DemoExperienceProps) {
         <section className="demo-screen demo-threshold fade-up">
           <div className="demo-section-head">
             <p className="caption caption-inverse">Threshold</p>
-            <h1 className="demo-question">This is where payment will enter later.</h1>
+            <h1 className="demo-question">Choose how much depth you want open.</h1>
             <p className="demo-body">
-              In this friend preview, every module is unlocked and checkout is intentionally disabled. The final web
-              build will attach these exact products to Stripe.
+              Cosmic Pass keeps the daily rhythm close, then opens the longer reads when more context matters.
             </p>
           </div>
 
@@ -315,7 +313,7 @@ export function DemoExperience({ products }: DemoExperienceProps) {
                 <h2>{product.title}</h2>
                 <p>{product.priceLabel}</p>
                 <button className="button-secondary button-on-dark" disabled type="button">
-                  Checkout disabled for preview
+                  Open from your account
                 </button>
               </article>
             ))}

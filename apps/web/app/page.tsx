@@ -1,4 +1,4 @@
-import { OUTPUT_RULES, PREMIUM_PRODUCTS } from "@cosmoscope/api";
+import { PREMIUM_PRODUCTS } from "@cosmoscope/api";
 
 const subscriptionProducts = Object.values(PREMIUM_PRODUCTS).filter((product) => product.kind === "subscription");
 const unlockProducts = Object.values(PREMIUM_PRODUCTS).filter((product) => product.kind === "one_time_unlock");
@@ -7,22 +7,22 @@ const onboardingScreens = [
   {
     index: "01",
     title: "Birth place",
-    body: "One question, one screen, one precise location instead of a long intake form."
+    body: "Start with the exact place. The better the location data, the cleaner the reading."
   },
   {
     index: "02",
     title: "Birth date",
-    body: "A single date screen keeps the ritual moving while the data stays exact."
+    body: "One clear date gives the chart its timing without turning setup into a chore."
   },
   {
     index: "03",
     title: "Birth time",
-    body: "Known time if you have it. A graceful fallback if you do not."
+    body: "Use the exact time if you know it. If you do not, CosmoScope will still give you a usable read."
   },
   {
     index: "04",
     title: "Reveal",
-    body: "Big three first, deeper context second, premium only after value is felt."
+    body: "Core placements first. Today’s Brief next. Deeper guidance opens when you want more context."
   }
 ];
 
@@ -31,29 +31,29 @@ const modulePreview = [
     eyebrow: "Your Sun",
     headline: "Aries",
     summary: "Impatient, bright, singular.",
-    detail: "The first read is concise on purpose. Depth arrives only when the user asks for more.",
+    detail: "This is the part of you that decides what matters and where your effort naturally goes first.",
     locked: false
   },
   {
     eyebrow: "Your Moon",
     headline: "Scorpio",
     summary: "Private, exacting, magnetic.",
-    detail: "Expanded emotional patterning opens inside the premium threshold.",
+    detail: "This is the emotional pattern underneath the surface: what stings, what settles you, and what stays hidden until it matters.",
     locked: true
   },
   {
     eyebrow: "Your Rising",
     headline: "Virgo",
     summary: "Composed, observant, selective.",
-    detail: "The outer layer stays crisp. The full paragraph waits behind intent.",
+    detail: "This is the version of you other people meet first and the tone you set before much is said.",
     locked: true
   }
 ];
 
 const thresholdBenefits = [
-  "Full daily climate with deeper context",
-  "StarScope and LoveScope for high-intent moments",
-  "Monthly and yearly guidance without generic filler"
+  "Longer daily guidance with stronger context",
+  "Weekly, monthly, and yearly structure mapped to your chart",
+  "Focused one-time reads when a relationship or decision needs more depth"
 ];
 
 const subscriptionNotes: Record<string, string> = {
@@ -68,62 +68,51 @@ const unlockNotes: Record<string, string> = {
   yearly_blueprint: "The long-range map for users who want the whole arc, not just the mood."
 };
 
-const openingDateLabel = new Intl.DateTimeFormat("en-US", {
-  month: "long",
-  day: "numeric"
-}).format(new Date());
-
 export default function HomePage() {
   return (
-    <main className="page-shell">
-      <section className="opening-band">
+    <main className="page-shell front-door-shell">
+      <section className="opening-band front-door-opening">
         <div className="opening-copy fade-up">
-          <p className="timestamp">
-            <time dateTime={new Date().toISOString().slice(0, 10)}>{openingDateLabel}</time> - Exact birth data, no
-            generic sun-sign filler.
-          </p>
-          <h1 className="hero-title">The chart is not the spectacle. You are.</h1>
+          <p className="timestamp">Personal astrological guidance from exact birth data.</p>
+          <h1 className="hero-title">
+            <span>Understand today&apos;s astrological weather.</span>
+            <span>Know how to move through it.</span>
+          </h1>
           <p className="lede">
-            CosmoScope turns precise sky math into intimate, legible guidance. Calm enough to trust. Sharp enough to
-            change what you do next.
+            CosmoScope connects your natal chart with the current sky to show what deserves your attention today - and
+            how to meet it with greater clarity, confidence, and calm.
           </p>
           <div className="action-row">
             <a className="button-primary" href="/app">
-              Open live app
+              Build my CosmoScope
             </a>
-            <a className="button-primary" href="/demo">
-              Enter demo experience
-            </a>
-            <a className="button-primary" href="#daily-layer">
-              Preview the free layer
+            <a className="button-secondary" href="/app">
+              Log in
             </a>
             <a className="button-secondary" href="#threshold">
-              See Cosmic Pass
+              Explore Cosmic Pass
             </a>
           </div>
         </div>
 
         <aside className="opening-aside fade-up delay-2">
-          <p className="caption">Calibration</p>
-          <h2 className="aside-title">A quieter category position.</h2>
+          <p className="caption">What opens first</p>
+          <h2 className="aside-title">Core placements. Today&apos;s Brief. Then deeper structure.</h2>
           <p className="aside-copy">
-            No doom-scroll feed. No chat gimmicks. No decorative galaxy haze standing in for confidence. Just exact
-            inputs, serious typography, and guidance that ends with a concrete next move.
+            Start with the essentials, then move into longer guidance when the day needs more context.
           </p>
           <ul className="calibration-list">
             <li>
-              <span>Output</span>
-              <strong>
-                {OUTPUT_RULES.maxSentences} sentences, no astro-jargon, ends with {OUTPUT_RULES.requiredCta}
-              </strong>
+              <span>Core placements</span>
+              <strong>Sun, Moon, and Rising translated into direct language</strong>
             </li>
             <li>
-              <span>Free habit</span>
-              <strong>Daily reading first, premium deep dives second</strong>
+              <span>Today&apos;s Brief</span>
+              <strong>A free reading built from the current astrological climate</strong>
             </li>
             <li>
-              <span>Premium stance</span>
-              <strong>Threshold, not punishment</strong>
+              <span>Deeper work</span>
+              <strong>Weekly, monthly, yearly, and one-time reads when the moment needs more depth</strong>
             </li>
           </ul>
         </aside>
@@ -133,11 +122,11 @@ export default function HomePage() {
 
       <section className="ritual-band" id="ritual">
         <div className="section-copy">
-          <p className="caption">Onboarding ritual</p>
-          <h2 className="section-title">One question per screen. More trust, less admin.</h2>
+          <p className="caption">How it opens</p>
+          <h2 className="section-title">One question at a time, so the setup feels human.</h2>
           <p className="section-body">
-            The intake should feel like a private ritual, not a medical clipboard. Each answer deepens the sense that
-            the user is building something exact.
+            Exact place, date, and time do more for the reading than extra ornament ever will. The setup should feel
+            measured, calm, and easy to finish.
           </p>
         </div>
 
@@ -159,18 +148,18 @@ export default function HomePage() {
       <section className="daily-band" id="daily-layer">
         <div className="section-copy">
           <p className="caption">Free daily layer</p>
-          <h2 className="section-title">A short reading before any premium ask.</h2>
+          <h2 className="section-title">Useful guidance before you go deeper.</h2>
           <p className="section-body">
-            The free experience should already feel useful. Premium is not about more noise; it is about deeper
-            pattern recognition when the user wants it.
+            Today’s Brief gives you the central theme, what to notice, and one practical move before anything else asks
+            for your attention.
           </p>
 
           <article className="daily-reading">
             <p className="reading-kicker">Today</p>
-            <h3 className="reading-headline">The mood favors clean decisions over loud ones.</h3>
+            <h3 className="reading-headline">The day asks for cleaner timing, not louder effort.</h3>
             <p className="reading-body">
-              Your attention is sharper than usual, but so is your impatience. <strong>Your move:</strong> finish the
-              important thing before you chase the interesting one.
+              Your attention is sharper than usual, but impatience is louder too. <strong>Your move:</strong> finish
+              what matters before the day teaches you through avoidable noise.
             </p>
           </article>
         </div>
@@ -194,11 +183,11 @@ export default function HomePage() {
         <div className="threshold-inner">
           <div className="threshold-copy">
             <p className="caption caption-inverse">Threshold</p>
-            <h2 className="threshold-title">Premium should feel like entering a quieter room.</h2>
+            <h2 className="threshold-title">Go deeper when the lighter read is no longer enough.</h2>
             <p className="threshold-body">
-              Cosmic Pass keeps the free daily ritual intact, then opens the reads that benefit from history, pattern,
-              and precision. One-time unlocks stay available for the moments that feel too specific for a generic
-              horoscope app to handle well.
+              Cosmic Pass keeps the free daily rhythm intact, then opens the longer reads that benefit from repetition,
+              pattern, and more emotional range. One-time unlocks stay available for moments that are too specific for
+              a broad daily read to handle cleanly.
             </p>
             <ul className="benefit-list">
               {thresholdBenefits.map((benefit) => (
@@ -247,11 +236,11 @@ export default function HomePage() {
 
       <section className="closing-band">
         <div className="section-copy closing-copy">
-          <p className="caption">Next up</p>
-          <h2 className="section-title">Tonight&apos;s job is to turn the front door into a real product surface.</h2>
+          <p className="caption">Why it matters</p>
+          <h2 className="section-title">A chart is only useful if it becomes guidance you can act on.</h2>
           <p className="section-body">
-            This redesign establishes the tone, hierarchy, and premium posture. Auth, checkout, and live entitlement
-            state are the immediate next layer, not a separate reinvention.
+            CosmoScope turns the pattern into language you can use, so the reading becomes preparation rather than
+            performance.
           </p>
         </div>
       </section>
