@@ -23,11 +23,8 @@ export default function HomePage() {
             <PremiumButton href="/app">
               Get my first Today&apos;s Brief
             </PremiumButton>
-            <PremiumButton href="/app" variant="secondary">
-              Log in
-            </PremiumButton>
           </div>
-          <p className="trust-line">Free first brief · No credit card · About 2 minutes</p>
+          <p className="trust-line">Free first brief &nbsp;•&nbsp; No credit card &nbsp;•&nbsp; About 2 minutes</p>
         </div>
       </section>
 

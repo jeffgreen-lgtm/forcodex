@@ -4055,3 +4055,174 @@ div {
     width: 100%;
   }
 }
+
+/* World 3 hero fidelity correction: eclipse-dominant, one CTA, no competing chrome. */
+.front-door-opening {
+  min-height: calc(100svh - 8px);
+  grid-template-columns: minmax(0, 0.78fr) minmax(420px, 1.08fr);
+  overflow: visible;
+}
+
+.front-door-opening .opening-copy {
+  max-width: 620px;
+  padding-left: clamp(0px, 2vw, 18px);
+  z-index: 3;
+}
+
+.front-door-shell .hero-title {
+  font-size: clamp(4.2rem, 7.4vw, 7.4rem);
+  line-height: 0.91;
+  max-width: 8.8ch;
+  text-wrap: balance;
+}
+
+.front-door-shell .lede {
+  font-size: clamp(1.08rem, 1.25vw, 1.32rem);
+  max-width: 25rem;
+}
+
+.front-door-shell .action-row {
+  display: flex;
+  margin-top: clamp(26px, 3vw, 38px);
+}
+
+.front-door-shell .action-row .premium-button {
+  width: auto;
+}
+
+.front-door-shell .trust-line {
+  color: rgba(245, 235, 199, 0.52);
+  font-size: 0.84rem;
+  letter-spacing: 0.01em;
+}
+
+.hero-celestial-art {
+  align-self: center;
+  justify-self: end;
+  margin-right: max(-180px, -12vw);
+  max-width: none;
+  opacity: 1;
+  width: min(760px, 58vw);
+}
+
+.hero-orbit {
+  border-color: rgba(212, 175, 55, 0.13);
+  inset: 4%;
+}
+
+.hero-orbit-two {
+  inset: 16%;
+  opacity: 0.5;
+}
+
+.hero-orbit::before {
+  border-top-color: rgba(212, 175, 55, 0.11);
+  left: 2%;
+  right: 2%;
+  transform: rotate(-13deg);
+}
+
+.hero-orbit::after {
+  background: #d4af37;
+  box-shadow: 0 0 24px rgba(212, 175, 55, 0.66);
+  height: 6px;
+  right: 9%;
+  top: 37%;
+  width: 6px;
+}
+
+.hero-eclipse {
+  background:
+    radial-gradient(circle at 83% 50%, rgba(255, 238, 184, 1) 0 2.8%, rgba(212, 175, 55, 0.95) 3.1%, rgba(212, 175, 55, 0.42) 7%, transparent 16%),
+    radial-gradient(circle at 77% 50%, rgba(212, 175, 55, 0.75), transparent 14%),
+    radial-gradient(circle at 48% 50%, #030304 0 49%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(212, 175, 55, 0.72) 50%, rgba(140, 89, 35, 0.28) 55%, transparent 62%);
+  box-shadow:
+    0 0 0 1px rgba(212, 175, 55, 0.18),
+    0 0 120px rgba(212, 175, 55, 0.32),
+    0 0 190px rgba(212, 175, 55, 0.14);
+  inset: 18%;
+}
+
+.hero-eclipse::before {
+  background:
+    linear-gradient(90deg, transparent 32%, rgba(255, 238, 184, 0.9) 51%, transparent 68%),
+    radial-gradient(circle at 82% 50%, rgba(255, 238, 184, 0.58), transparent 18%);
+  inset: -18%;
+  opacity: 0.86;
+}
+
+.hero-horizon {
+  bottom: 2%;
+  height: 26%;
+  opacity: 0.56;
+}
+
+@media (max-width: 860px) {
+  .front-door-opening {
+    min-height: calc(100svh - 8px);
+    overflow: hidden;
+    padding-top: 28px;
+  }
+
+  .hero-celestial-art {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: auto;
+    margin: 0;
+    max-width: none;
+    opacity: 0.98;
+    position: absolute;
+    right: clamp(-220px, -42vw, -150px);
+    top: 22px;
+    width: min(540px, 128vw);
+  }
+
+  .front-door-opening .opening-copy {
+    grid-column: 1;
+    grid-row: 1;
+    max-width: 100%;
+    min-width: 0;
+    padding-top: clamp(168px, 48vw, 246px);
+    width: 100%;
+  }
+
+  .front-door-shell .hero-title {
+    font-size: clamp(3.85rem, 16vw, 5.25rem);
+    max-width: 7.6ch;
+  }
+
+  .front-door-shell .lede {
+    max-width: 20rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .front-door-opening {
+    min-height: calc(100svh - 10px);
+    padding-bottom: 34px;
+  }
+
+  .hero-celestial-art {
+    right: clamp(-248px, -58vw, -188px);
+    top: 10px;
+    width: min(500px, 140vw);
+  }
+
+  .front-door-opening .opening-copy {
+    padding-top: clamp(178px, 53vw, 232px);
+  }
+
+  .front-door-shell .hero-title {
+    font-size: clamp(3.55rem, 16.5vw, 4.65rem);
+    max-width: 7.25ch;
+  }
+
+  .front-door-shell .action-row {
+    display: block;
+  }
+
+  .front-door-shell .action-row .premium-button {
+    width: 100%;
+  }
+}
