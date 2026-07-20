@@ -1,96 +1,108 @@
-import {
-  EnergyTimeline,
-  PremiumButton,
-  PremiumCard,
-  PremiumSurface,
-  SolarHero,
-  solarCssVars
-} from "./components/premium";
+import Image from "next/image";
 
 export default function HomePage() {
   return (
-    <PremiumSurface className="page-shell front-door-shell" style={solarCssVars}>
-      <section className="opening-band front-door-opening" aria-labelledby="cosmoscope-hero-title">
-        <SolarHero className="hero-celestial-art" />
-        <div className="opening-copy fade-up">
-          <p className="timestamp">Your chart. Today&apos;s sky.</p>
-          <h1 className="hero-title" id="cosmoscope-hero-title">
-            <span>The most beautiful way</span>
-            <span>to begin your day.</span>
-          </h1>
-          <p className="lede">Know where to place your attention before the day begins.</p>
-          <div className="action-row">
-            <PremiumButton href="/app">
+    <main className="solar-landing">
+      <header className="solar-landing-header" aria-label="CosmoScope">
+        <a className="solar-brand" href="/" aria-label="CosmoScope home">
+          CosmoScope
+        </a>
+        <nav className="solar-nav" aria-label="Primary navigation">
+          <a href="/app">Sign in</a>
+          <a className="solar-nav-cta" href="/app">
+            Begin
+          </a>
+        </nav>
+      </header>
+
+      <section className="solar-hero-section" aria-labelledby="solar-hero-title">
+        <div className="solar-hero-copy">
+          <p className="solar-eyebrow">Your chart. Today&apos;s sky.</p>
+          <h1 id="solar-hero-title">The most beautiful way to begin your day.</h1>
+          <p className="solar-hero-lede">Know where to place your attention before the day begins.</p>
+          <div className="solar-action-row">
+            <a className="solar-button solar-button-primary" href="/app">
               Get my first Today&apos;s Brief
-            </PremiumButton>
+            </a>
           </div>
-          <p className="trust-line">Free first brief &nbsp;•&nbsp; No credit card &nbsp;•&nbsp; About 2 minutes</p>
         </div>
-      </section>
 
-      <section className="product-demo-band" id="daily-layer" aria-labelledby="product-reveal-title">
-        <div className="product-reveal-glow" aria-hidden="true" />
-        <div className="section-copy">
-          <PremiumCard className="daily-reading product-brief-card">
-            <div className="brief-card-header">
-              <p className="reading-kicker">Today&apos;s Theme</p>
-              <span>06:42</span>
-            </div>
-            <h2 className="reading-headline" id="product-reveal-title">
-              Protect the pace that keeps you clear.
-            </h2>
-            <p className="reading-body brief-body">
-              The day may reward discernment more than speed. Notice what creates urgency without creating value.
-            </p>
-            <div className="brief-move">
-              <p className="reading-kicker">Your Move</p>
-              <p>Finish what matters before avoidable noise chooses your pace.</p>
-            </div>
-            <span className="brief-card-mark" aria-hidden="true" />
-          </PremiumCard>
-        </div>
-      </section>
-
-      <section className="editorial-principle-band" aria-labelledby="preparation-over-prediction">
-        <div className="principle-celestial-mark" aria-hidden="true">
-          <span />
-        </div>
-        <div className="section-copy">
-          <h2 className="section-title" id="preparation-over-prediction">
-            Preparation over prediction.
-          </h2>
-          <p className="section-body">Astrology is the engine. Daily clarity is the product.</p>
-          <EnergyTimeline
-            className="principle-list"
-            items={["Today's theme", "Pressure points", "Your next best move"]}
+        <div className="solar-hero-art" aria-hidden="true">
+          <Image
+            className="solar-eclipse-art solar-eclipse-desktop"
+            src="/art/eclipse-desktop.png"
+            alt=""
+            width={1200}
+            height={900}
+            priority
+            unoptimized
           />
-          <p className="principle-afterword">Know what deserves your attention before the day decides for you.</p>
+          <Image
+            className="solar-eclipse-art solar-eclipse-mobile"
+            src="/art/eclipse-mobile.png"
+            alt=""
+            width={900}
+            height={1100}
+            priority
+            unoptimized
+          />
         </div>
       </section>
 
-      <section className="front-door-final-cta" aria-labelledby="final-invitation-title">
-        <div className="invitation-orbit" aria-hidden="true">
-          <span />
-        </div>
-        <div className="final-cta-copy">
-          <p className="caption">Your first brief is free</p>
-          <h2 className="section-title" id="final-invitation-title">
-            <span>Your day.</span>
-            <span>Understood.</span>
-          </h2>
-          <p className="section-body">Personal guidance from your chart and today&apos;s sky.</p>
-          <PremiumButton href="/app">
-            Get my Today&apos;s Brief
-          </PremiumButton>
-          <p className="trust-line">Private setup · No credit card required</p>
-        </div>
+      <section className="solar-positioning" id="preparation" aria-labelledby="solar-positioning-title">
+        <p className="solar-eyebrow">Preparation over prediction</p>
+        <h2 id="solar-positioning-title">Preparation over prediction.</h2>
+        <p>
+          CosmoScope uses astrology as the engine, but the product is daily clarity: what deserves your attention,
+          where friction may appear, and how to move through it.
+        </p>
       </section>
 
-      <footer className="front-door-footer">
-        <span>CosmoScope</span>
-        <span>Preparation over prediction.</span>
-        <a href="/app">Log in</a>
-      </footer>
-    </PremiumSurface>
+      <section className="solar-reading-section" id="todays-brief" aria-labelledby="solar-reading-title">
+        <article className="solar-reading-paper">
+          <p className="solar-eyebrow">Today</p>
+
+          <div className="solar-reading-row">
+            <p className="solar-reading-label">Theme</p>
+            <div>
+              <h2 id="solar-reading-title">
+                Protect the pace
+                <span>that keeps you clear.</span>
+              </h2>
+              <p>
+                The day may reward discernment more than speed. Notice what creates urgency without creating value.
+              </p>
+            </div>
+          </div>
+
+          <div className="solar-reading-rule" aria-hidden="true" />
+
+          <div className="solar-reading-row">
+            <p className="solar-reading-label">Pressure</p>
+            <p>
+              Urgency may arrive dressed as importance. Before you respond, separate what is truly time-sensitive from
+              what is simply loud.
+            </p>
+          </div>
+
+          <div className="solar-reading-rule" aria-hidden="true" />
+
+          <div className="solar-reading-row">
+            <p className="solar-reading-label">Your Move</p>
+            <p>Finish what matters before avoidable noise chooses your pace.</p>
+          </div>
+        </article>
+      </section>
+
+      <section className="solar-final-section" aria-labelledby="solar-final-title">
+        <h2 id="solar-final-title">
+          Your day.
+          <span>Understood.</span>
+        </h2>
+        <a className="solar-button solar-button-primary" href="/app">
+          Begin
+        </a>
+      </section>
+    </main>
   );
 }

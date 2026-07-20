@@ -5,12 +5,12 @@ const feedbackQuestions = [
   "What felt generic, confusing, or too much?",
   "Would you come back tomorrow for another reading?",
   "Would monthly or yearly guidance feel worth paying for?",
-  "What would make CosmoScope feel more magical, useful, or premium?"
+  "What would make CosmoScope feel clearer, calmer, or more useful?"
 ];
 
 export const metadata = {
-  title: "Beta Feedback | CosmoScope",
-  description: "Private beta feedback for CosmoScope."
+  title: "Feedback | CosmoScope",
+  description: "Private feedback for CosmoScope."
 };
 
 export default function BetaFeedbackPage() {
@@ -46,7 +46,7 @@ export default function BetaFeedbackPage() {
             marginBottom: "18px"
           }}
         >
-          CosmoScope private beta
+          CosmoScope feedback
         </p>
 
         <h1
@@ -67,8 +67,8 @@ export default function BetaFeedbackPage() {
             marginBottom: "24px"
           }}
         >
-          CosmoScope reads the stars, then shows you the path toward your most aligned self.
-          This beta is here to test whether the reading actually feels personal, useful, and worth returning to.
+          CosmoScope turns the chart into guidance you can use. Your notes help sharpen what feels personal, useful,
+          and worth returning to.
         </p>
 
         <div
@@ -95,8 +95,8 @@ export default function BetaFeedbackPage() {
             marginBottom: "26px"
           }}
         >
-          Send Jeff your honest reaction after trying your Daily and Weekly readings. The best feedback is specific:
-          what felt magical, what felt generic, and what made you want to keep going.
+          Send Jeff your honest reaction after trying your Daily and Weekly readings. The best notes are specific:
+          what felt clear, what felt generic, and what made you want to keep going.
         </p>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>

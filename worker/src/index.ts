@@ -30,6 +30,7 @@ type StarScopeRequest = {
 
 type DevReadingEngineV2SmokeRequest = {
   displayName?: string;
+  iterations?: number;
   timeframe?: ForecastTimeframe;
 };
 
@@ -119,6 +120,7 @@ type ForecastRow = {
 type Env = {
   AI_READING_PROVIDER?: string;
   AI_READING_MODEL?: string;
+  ENABLE_PAID_AI_SMOKE?: string;
   GEMINI_API_KEY?: string;
   APP_ENV?: string;
   APPLE_SERVER_NOTIFICATION_BEARER?: string;
@@ -208,6 +210,8 @@ export default {
           return await handleDevReadingEngineV2Smoke(request, env);
         case "POST /api/dev/reading-engine-v2-gemini-smoke":
           return await handleDevReadingEngineV2GeminiSmoke(request, env);
+        case "POST /api/dev/reading-engine-v2-gemini-batch":
+          return await handleDevReadingEngineV2GeminiBatch(request, env);
         case `POST ${API_PATHS.verifyAppleTransaction}`:
           return await handleVerifyAppleTransaction(request, env);
         case `POST ${API_PATHS.appleServerNotification}`:
@@ -716,6 +720,7 @@ async function handleForecast(request: Request, env: Env) {
       cached: true,
       content: cached.content,
       effectiveDate: cached.effective_date,
+      structuredDailyBrief: timeframe === "daily" ? deriveStructuredDailyBriefFromContent(cached.content) : undefined,
       timeframe: cached.timeframe
     });
   }
@@ -744,7 +749,7 @@ async function handleForecast(request: Request, env: Env) {
     timeframe === "daily" ? "daily" : timeframe === "weekly" ? "weekly" : "long_range"
   );
   const chartForForecast = normalizedChart ? { ...normalizedChart, dominantTransit: dominantTransit ?? undefined } : normalizedChart;
-  const content = await buildForecastContent({
+  const result = await buildForecastContentResult({
     chart: chartForForecast,
     displayName,
     effectiveDate,
@@ -753,6 +758,7 @@ async function handleForecast(request: Request, env: Env) {
     timeframe,
     hasChart: Boolean(chart)
   });
+  const content = result.content;
 
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/forecast_cache`, {
     body: JSON.stringify({
@@ -778,6 +784,7 @@ async function handleForecast(request: Request, env: Env) {
     cached: false,
     content,
     effectiveDate,
+    structuredDailyBrief: timeframe === "daily" ? result.structuredDailyBrief : undefined,
     timeframe
   });
 }
@@ -786,6 +793,10 @@ async function handleDevReadingEngineV2GeminiSmoke(request: Request, env: Env) {
   const smokeHeader = request.headers.get("x-cosmoscope-dev-smoke");
   if (env.APP_ENV === "production" && smokeHeader !== "reading-engine-v2") {
     throw new HttpError(404, "Route not found.");
+  }
+
+  if (!isPaidAiSmokeEnabled(env)) {
+    throw new HttpError(403, "Paid Gemini smoke routes are disabled unless ENABLE_PAID_AI_SMOKE=true.");
   }
 
   if (!env.GEMINI_API_KEY) {
@@ -799,86 +810,69 @@ async function handleDevReadingEngineV2GeminiSmoke(request: Request, env: Env) {
     throw new HttpError(400, "Unsupported timeframe.");
   }
 
-  const effectiveDate = getEffectiveDate(timeframe);
-  const chart: ChartPayload = {
-    accuracy: {
-      engine: "mock",
-      houses: "mock",
-      planets: "mock"
-    },
-    bigThree: {
-      moon: "Libra",
-      rising: "Pisces",
-      sun: "Sagittarius"
-    },
-    birth: {
-      date: "1983-11-30",
-      instantUtc: "1983-11-30T18:18:00.000Z",
-      latitude: 33.9528472,
-      longitude: -84.5496148,
-      place: "Marietta, Georgia, United States",
-      time: "13:18",
-      timezone: "America/New_York",
-      unknownBirthTime: false
-    },
-    dominantTransit: {
-      aspect: "Trine",
-      exactness: 1.2,
-      natalBody: "Mercury",
-      natalSign: "Sagittarius",
-      orb: 1.2,
-      transitBody: "Venus",
-      transitSign: "Leo"
-    },
-    transitSignals: [
-      {
-        aspect: "Trine",
-        exactness: 1.2,
-        natalBody: "Mercury",
-        natalSign: "Sagittarius",
-        orb: 1.2,
-        transitBody: "Venus",
-        transitSign: "Leo"
-      },
-      {
-        aspect: "Sextile",
-        exactness: 0.64,
-        natalBody: "Moon",
-        natalSign: "Libra",
-        orb: 2.0,
-        transitBody: "Mars",
-        transitSign: "Gemini"
-      },
-      {
-        aspect: "Square",
-        exactness: 0.51,
-        natalBody: "Sun",
-        natalSign: "Sagittarius",
-        orb: 2.8,
-        transitBody: "Saturn",
-        transitSign: "Pisces"
-      }
-    ],
-    planets: [],
-    transits: [],
-    wheel: {
-      ascendant: null,
-      midheaven: null
-    }
+  const smokeEnv: Env = {
+    ...env,
+    AI_READING_PROVIDER: "gemini",
+    ENABLE_AI_READINGS: "true",
+    READING_ENGINE_VERSION: "v2"
   };
 
-  const entitlements: EntitlementsRow = {
-    active_until: null,
-    forecast_monthly_unlocked: true,
-    lovescope_unlocked: false,
-    premium_active: true,
-    premium_source: "admin",
-    revenuecat_active: false,
-    starscope_unlocked: false,
-    stripe_active: false,
-    updated_at: new Date().toISOString(),
-    yearly_blueprint_unlocked: true
-  };
+  const run = await runGeminiSmokeForecast({
+    displayName: body.displayName?.trim() || "Jeff",
+    env: smokeEnv,
+    timeframe
+  });
+
+  return json({
+    ok: run.result.ok,
+    chart: run.chart.bigThree,
+    content: run.result.content,
+    promptTokenCount: run.result.usage?.promptTokenCount ?? null,
+    candidatesTokenCount: run.result.usage?.candidatesTokenCount ?? null,
+    thoughtsTokenCount: run.result.usage?.thoughtsTokenCount ?? null,
+    totalTokenCount: run.result.usage?.totalTokenCount ?? null,
+    estimatedCostUsd: run.result.usage?.estimatedCostUsd ?? null,
+    effectiveDate: run.effectiveDate,
+    engine: run.result.engine === "v2_ai" ? "v2_gemini" : "v1_fallback",
+    fallbackUsed: run.result.fallbackUsed,
+    error: run.result.fallbackUsed ? run.result.errorMessage : undefined,
+    provider: run.result.provider,
+    structuredDailyBrief: timeframe === "daily" ? run.result.structuredDailyBrief ?? null : null,
+    telemetry: run.result.telemetry ?? null,
+    timeframe
+  });
+}
+
+async function handleDevReadingEngineV2GeminiBatch(request: Request, env: Env) {
+  const smokeHeader = request.headers.get("x-cosmoscope-dev-smoke");
+  if (env.APP_ENV === "production" && smokeHeader !== "reading-engine-v2") {
+    throw new HttpError(404, "Route not found.");
+  }
+
+  if (!isPaidAiSmokeEnabled(env)) {
+    throw new HttpError(403, "Paid Gemini smoke routes are disabled unless ENABLE_PAID_AI_SMOKE=true.");
+  }
+
+  if (!env.GEMINI_API_KEY) {
+    throw new HttpError(400, "Gemini smoke test requires GEMINI_API_KEY to be configured in the Worker environment.");
+  }
+
+  const body = await readJson<DevReadingEngineV2SmokeRequest>(request);
+  const timeframe = body.timeframe ?? "daily";
+  const requestedIterations = body.iterations ?? 1;
+  const iterations = Math.trunc(requestedIterations);
+
+  if (!["daily", "weekly", "monthly", "yearly"].includes(timeframe)) {
+    throw new HttpError(400, "Unsupported timeframe.");
+  }
+
+  if (!Number.isFinite(iterations) || iterations < 1) {
+    throw new HttpError(400, "Iterations must be between 1 and 3.");
+  }
+
+  if (iterations > 3) {
+    throw new HttpError(400, "Paid Gemini batch smoke is capped at 3 iterations.");
+  }
 
   const smokeEnv: Env = {
     ...env,
@@ -887,23 +881,59 @@ async function handleDevReadingEngineV2GeminiSmoke(request: Request, env: Env) {
     READING_ENGINE_VERSION: "v2"
   };
 
-  const content = await buildForecastContent({
-    chart,
-    displayName: body.displayName?.trim() || "Jeff",
-    effectiveDate,
-    entitlements,
-    env: smokeEnv,
-    timeframe,
-    hasChart: true
-  });
+  const runs: Array<{
+    ok: boolean;
+    estimatedCostUsd: number | null;
+    fallbackUsed: boolean;
+    failureKind: string | null;
+    latencyMs: number | null;
+  }> = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    const run = await runGeminiSmokeForecast({
+      displayName: body.displayName?.trim() || "Jeff",
+      env: smokeEnv,
+      timeframe
+    });
+
+    const attempts = run.result.telemetry?.attempts ?? [];
+    const terminalAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : undefined;
+
+    runs.push({
+      ok: run.result.ok,
+      estimatedCostUsd: run.result.usage?.estimatedCostUsd ?? null,
+      fallbackUsed: run.result.fallbackUsed,
+      failureKind: run.result.ok ? null : terminalAttempt?.failureKind ?? "unknown",
+      latencyMs: run.result.telemetry?.totalElapsedMs ?? terminalAttempt?.elapsedMs ?? null
+    });
+  }
+
+  const successes = runs.filter((run) => run.ok).length;
+  const failures = runs.length - successes;
+  const latencyValues = runs.map((run) => run.latencyMs).filter((value): value is number => typeof value === "number");
+  const costValues = runs
+    .map((run) => run.estimatedCostUsd)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const failureKinds = runs.reduce<Record<string, number>>((accumulator, run) => {
+    if (!run.failureKind) {
+      return accumulator;
+    }
+
+    accumulator[run.failureKind] = (accumulator[run.failureKind] ?? 0) + 1;
+    return accumulator;
+  }, {});
 
   return json({
-    chart: chart.bigThree,
-    content,
-    effectiveDate,
-    engine: isReadingEngineV2CachedContent(content) ? "v2_gemini" : "v1_fallback",
-    provider: "gemini",
-    timeframe
+    averageEstimatedCostUsd:
+      costValues.length > 0 ? Number((costValues.reduce((sum, value) => sum + value, 0) / costValues.length).toFixed(8)) : null,
+    averageLatencyMs:
+      latencyValues.length > 0 ? Math.round(latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length) : null,
+    failures,
+    failureKinds,
+    iterations,
+    maxLatencyMs: latencyValues.length > 0 ? Math.max(...latencyValues) : null,
+    successRate: Number(((successes / runs.length) * 100).toFixed(1)),
+    successes
   });
 }
 
@@ -1008,7 +1038,7 @@ async function handleDevReadingEngineV2Smoke(request: Request, env: Env) {
     READING_ENGINE_VERSION: "v2"
   };
 
-  const content = await buildForecastContent({
+  const result = await buildForecastContentResult({
     chart,
     displayName: body.displayName?.trim() || "Jeff",
     effectiveDate,
@@ -1019,12 +1049,126 @@ async function handleDevReadingEngineV2Smoke(request: Request, env: Env) {
   });
 
   return json({
+    ok: result.ok,
     chart: chart.bigThree,
-    content,
+    content: result.content,
     effectiveDate,
-    engine: isReadingEngineV2CachedContent(content) ? "v2_mock" : "v1_fallback",
+    engine: result.fallbackUsed ? "v1_fallback" : "v2_mock",
+    fallbackUsed: result.fallbackUsed,
+    error: result.fallbackUsed ? result.errorMessage : undefined,
+    provider: "mock",
+    structuredDailyBrief: timeframe === "daily" ? result.structuredDailyBrief ?? null : null,
     timeframe
   });
+}
+
+function buildDevReadingEngineSmokeChart(): ChartPayload {
+  return {
+    accuracy: {
+      engine: "mock",
+      houses: "mock",
+      planets: "mock"
+    },
+    bigThree: {
+      moon: "Libra",
+      rising: "Pisces",
+      sun: "Sagittarius"
+    },
+    birth: {
+      date: "1983-11-30",
+      instantUtc: "1983-11-30T18:18:00.000Z",
+      latitude: 33.9528472,
+      longitude: -84.5496148,
+      place: "Marietta, Georgia, United States",
+      time: "13:18",
+      timezone: "America/New_York",
+      unknownBirthTime: false
+    },
+    dominantTransit: {
+      aspect: "Trine",
+      exactness: 1.2,
+      natalBody: "Mercury",
+      natalSign: "Sagittarius",
+      orb: 1.2,
+      transitBody: "Venus",
+      transitSign: "Leo"
+    },
+    transitSignals: [
+      {
+        aspect: "Trine",
+        exactness: 1.2,
+        natalBody: "Mercury",
+        natalSign: "Sagittarius",
+        orb: 1.2,
+        transitBody: "Venus",
+        transitSign: "Leo"
+      },
+      {
+        aspect: "Sextile",
+        exactness: 0.64,
+        natalBody: "Moon",
+        natalSign: "Libra",
+        orb: 2.0,
+        transitBody: "Mars",
+        transitSign: "Gemini"
+      },
+      {
+        aspect: "Square",
+        exactness: 0.51,
+        natalBody: "Sun",
+        natalSign: "Sagittarius",
+        orb: 2.8,
+        transitBody: "Saturn",
+        transitSign: "Pisces"
+      }
+    ],
+    planets: [],
+    transits: [],
+    wheel: {
+      ascendant: null,
+      midheaven: null
+    }
+  };
+}
+
+function buildDevReadingEngineSmokeEntitlements(): EntitlementsRow {
+  return {
+    active_until: null,
+    forecast_monthly_unlocked: true,
+    lovescope_unlocked: false,
+    premium_active: true,
+    premium_source: "admin",
+    revenuecat_active: false,
+    starscope_unlocked: false,
+    stripe_active: false,
+    updated_at: new Date().toISOString(),
+    yearly_blueprint_unlocked: true
+  };
+}
+
+async function runGeminiSmokeForecast(input: {
+  displayName: string;
+  env: Env;
+  timeframe: ForecastTimeframe;
+}) {
+  const effectiveDate = getEffectiveDate(input.timeframe);
+  const chart = buildDevReadingEngineSmokeChart();
+  const entitlements = buildDevReadingEngineSmokeEntitlements();
+  const result = await buildForecastContentResult({
+    chart,
+    displayName: input.displayName,
+    effectiveDate,
+    entitlements,
+    env: input.env,
+    timeframe: input.timeframe,
+    hasChart: true
+  });
+
+  return {
+    chart,
+    effectiveDate,
+    result
+  };
 }
 
 async function handleStudioRead(request: Request, env: Env) {
@@ -1164,7 +1308,16 @@ type ReadingEngineV2Result = {
   dateLabel: string;
   paragraphs: string[];
   signals: string[];
+  structuredDailyBrief?: StructuredDailyBrief;
   title: string;
+  yourMove: string;
+};
+
+type StructuredDailyBrief = {
+  headline: string;
+  learnYourSky?: string;
+  noticeWhen: string[];
+  whyTodayFeelsThisWay: string[];
   yourMove: string;
 };
 
@@ -1191,23 +1344,446 @@ type ReadingEngineV2PromptPayload = {
       sun: string;
       moon: string;
       rising: string;
-      dominantTransit?: unknown;
-      transitSignals?: unknown[];
     };
+    editorialBrief: EditorialBrief;
   };
-  outputShape: {
-    title: "string";
-    dateLabel: "string";
-    paragraphs: "string[]";
-    signals: "string[]";
-    yourMove: "string";
-  };
+  outputShape: Record<string, unknown>;
 };
+
+type InterpretationPacketConfidence = "high" | "medium" | "low" | "limited";
+
+type InterpretationPacket = {
+  primaryTheme: string;
+  secondaryThemes: string[];
+  opportunities: string[];
+  frictionPoints: string[];
+  confidence: InterpretationPacketConfidence;
+  dominantTransit: TransitSignal | null;
+  supportingTransits: TransitSignal[];
+  practicalFocus: string[];
+  editorialWarnings: string[];
+  astrologicalEvidence: string[];
+};
+
+type EditorialBriefTone = "direct" | "steady" | "gentle" | "restrained";
+
+type EditorialBrief = {
+  headline: string;
+  primaryNarrative: string;
+  emotionalGoal: string;
+  readerPreparation: string[];
+  readerAction: string;
+  tone: EditorialBriefTone;
+  confidenceLanguage: string;
+  avoidLanguage: string[];
+  closingPurpose: string;
+};
+
+function buildInterpretationPacket(input: ReadingEngineGenerationInput): InterpretationPacket | null {
+  if (!input.chart) {
+    return null;
+  }
+
+  const dominantTransit = input.chart.dominantTransit ?? null;
+  const chartSignals = input.chart.transitSignals?.slice(0, 5) ?? [];
+  const transitSignals = dominantTransit
+    ? [dominantTransit, ...chartSignals.filter((signal) => !isSameTransitSignal(signal, dominantTransit))]
+    : chartSignals;
+  const supportingTransits = dominantTransit
+    ? transitSignals.filter((signal) => !isSameTransitSignal(signal, dominantTransit)).slice(0, 4)
+    : transitSignals.slice(0, 4);
+  const evidenceSignals = dominantTransit ? [dominantTransit, ...supportingTransits] : supportingTransits;
+
+  return {
+    primaryTheme: dominantTransit ? buildTransitSignalName(dominantTransit) : "No dominant transit signal available",
+    secondaryThemes: supportingTransits.map(buildTransitSignalName),
+    opportunities: supportingTransits.map(buildTransitSignalFocus),
+    frictionPoints: dominantTransit ? [buildTransitSignalFocus(dominantTransit)] : [],
+    confidence: deriveInterpretationPacketConfidence(dominantTransit, transitSignals),
+    dominantTransit,
+    supportingTransits,
+    practicalFocus: evidenceSignals.map(buildTransitSignalFocus),
+    editorialWarnings: buildInterpretationPacketWarnings(input, dominantTransit, supportingTransits),
+    astrologicalEvidence: evidenceSignals.map(buildTransitSignalEvidence)
+  };
+}
+
+function buildTransitSignalName(signal: TransitSignal) {
+  return `${signal.transitBody} ${normalizeTransitAspect(signal.aspect)} ${signal.natalBody}`;
+}
+
+function buildTransitSignalFocus(signal: TransitSignal) {
+  return `${signal.transitBody} in ${signal.transitSign} with natal ${signal.natalBody}`;
+}
+
+function buildTransitSignalEvidence(signal: TransitSignal) {
+  const evidence = [
+    `${signal.transitBody} in ${signal.transitSign}`,
+    `${normalizeTransitAspect(signal.aspect)} natal ${signal.natalBody}`
+  ];
+
+  if (signal.natalSign) {
+    evidence.push(`natal sign: ${signal.natalSign}`);
+  }
+
+  if (signal.exactness > 0) {
+    evidence.push(`exactness: ${roundDegree(signal.exactness)}`);
+  }
+
+  if (signal.orb > 0) {
+    evidence.push(`orb: ${roundDegree(signal.orb)}`);
+  }
+
+  return evidence.join(" | ");
+}
+
+function normalizeTransitAspect(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function isSameTransitSignal(left: TransitSignal, right: TransitSignal) {
+  return (
+    left.transitBody === right.transitBody &&
+    left.transitSign === right.transitSign &&
+    left.aspect === right.aspect &&
+    left.natalBody === right.natalBody &&
+    left.natalSign === right.natalSign
+  );
+}
+
+function deriveInterpretationPacketConfidence(
+  dominantTransit: TransitSignal | null,
+  transitSignals: TransitSignal[]
+): InterpretationPacketConfidence {
+  if (!dominantTransit && transitSignals.length === 0) {
+    return "limited";
+  }
+
+  if ((dominantTransit?.exactness ?? 0) >= 18) {
+    return "high";
+  }
+
+  if ((dominantTransit?.exactness ?? 0) >= 8 || transitSignals.length >= 3) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function buildInterpretationPacketWarnings(
+  input: ReadingEngineGenerationInput,
+  dominantTransit: TransitSignal | null,
+  supportingTransits: TransitSignal[]
+) {
+  const warnings = [
+    "Do not infer astrological meaning beyond the packet evidence.",
+    "Treat supporting transits as secondary to the dominant transit."
+  ];
+
+  if (!dominantTransit) {
+    warnings.push("No dominant transit is available. Avoid overstating certainty.");
+  }
+
+  if (supportingTransits.length === 0) {
+    warnings.push("No supporting transit stack is available. Keep the reading narrow.");
+  }
+
+  if (input.chart?.birth?.unknownBirthTime) {
+    warnings.push("Birth time is unknown. Avoid overclaiming Rising-sign precision.");
+  }
+
+  return warnings;
+}
+
+function buildEditorialBrief(packet: InterpretationPacket): EditorialBrief {
+  const readerPreparation = packet.practicalFocus.slice(0, 3);
+  const emotionalGoal = buildEditorialBriefEmotionalGoal(packet);
+
+  return {
+    headline: buildEditorialBriefHeadline(packet),
+    primaryNarrative: buildEditorialBriefNarrative(packet),
+    emotionalGoal,
+    readerPreparation,
+    readerAction: buildEditorialBriefReaderAction(packet, readerPreparation),
+    tone: deriveEditorialBriefTone(packet.confidence),
+    confidenceLanguage: buildEditorialBriefConfidenceLanguage(packet.confidence),
+    avoidLanguage: buildEditorialBriefAvoidLanguage(packet),
+    closingPurpose: buildEditorialBriefClosingPurpose(emotionalGoal)
+  };
+}
+
+function buildEditorialBriefHeadline(packet: InterpretationPacket) {
+  return packet.primaryTheme;
+}
+
+function buildEditorialBriefNarrative(packet: InterpretationPacket) {
+  const parts = [
+    `Center the reading on ${packet.primaryTheme}.`
+  ];
+
+  if (packet.secondaryThemes[0]) {
+    parts.push(`Use ${packet.secondaryThemes[0]} as the supporting context, not a competing storyline.`);
+  }
+
+  if (packet.frictionPoints[0]) {
+    parts.push(`Keep the practical tension anchored in ${packet.frictionPoints[0]}.`);
+  }
+
+  return parts.join(" ");
+}
+
+function buildEditorialBriefEmotionalGoal(packet: InterpretationPacket) {
+  if (packet.frictionPoints[0]) {
+    return `Leave the reader clearer and less reactive around ${packet.frictionPoints[0]}.`;
+  }
+
+  if (packet.opportunities[0]) {
+    return `Leave the reader better prepared to work with ${packet.opportunities[0]}.`;
+  }
+
+  return "Leave the reader steadier, clearer, and more prepared to make one grounded move.";
+}
+
+function buildEditorialBriefReaderAction(packet: InterpretationPacket, readerPreparation: string[]) {
+  return readerPreparation[0] ?? packet.opportunities[0] ?? packet.primaryTheme;
+}
+
+function deriveEditorialBriefTone(confidence: InterpretationPacketConfidence): EditorialBriefTone {
+  switch (confidence) {
+    case "high":
+      return "direct";
+    case "medium":
+      return "steady";
+    case "low":
+      return "gentle";
+    case "limited":
+      return "restrained";
+  }
+}
+
+function buildEditorialBriefConfidenceLanguage(confidence: InterpretationPacketConfidence) {
+  switch (confidence) {
+    case "high":
+      return "The astrological picture today is unusually clear.";
+    case "medium":
+      return "The pattern is clear enough to read directly without overstating it.";
+    case "low":
+      return "There are several subtle influences worth paying attention to.";
+    case "limited":
+      return "The available astrological signal is light, so the reading should stay modest and precise.";
+  }
+}
+
+function buildEditorialBriefAvoidLanguage(packet: InterpretationPacket) {
+  return [
+    ...packet.editorialWarnings,
+    "Do not introduce predictions, fate language, or dramatic certainty.",
+    "Do not contradict the packet's confidence level or supporting evidence."
+  ];
+}
+
+function buildEditorialBriefClosingPurpose(emotionalGoal: string) {
+  return `${emotionalGoal} End by sending the reader back into the day with one concrete next move.`;
+}
+
+function isStructuredDailyBrief(value: unknown): value is StructuredDailyBrief {
+  return Boolean(value && typeof value === "object");
+}
+
+function sanitizeBriefList(value: unknown, limit: number) {
+  return Array.isArray(value) ? value.map(sanitizeReadingText).filter(Boolean).slice(0, limit) : [];
+}
+
+function validateStructuredDailyBrief(
+  value: unknown,
+  options: { allowDerivedNoticeWhen?: boolean; allowMissingLearnYourSky?: boolean } = {}
+): StructuredDailyBrief {
+  if (!isStructuredDailyBrief(value)) {
+    throw new Error("Structured daily brief is missing.");
+  }
+
+  const headline = sanitizeReadingText(value.headline);
+  const noticeWhen = sanitizeBriefList(value.noticeWhen, 3);
+  const yourMove = sanitizeReadingText(value.yourMove);
+  const whyTodayFeelsThisWay = sanitizeBriefList(value.whyTodayFeelsThisWay, 4);
+  const learnYourSky = sanitizeReadingText(value.learnYourSky);
+
+  if (!headline || !yourMove || !whyTodayFeelsThisWay.length) {
+    throw new Error("Structured daily brief is incomplete.");
+  }
+
+  if (!options.allowDerivedNoticeWhen && noticeWhen.length !== 3) {
+    throw new Error("Structured daily brief must contain exactly 3 Notice When items.");
+  }
+
+  if (headline.split(/\s+/).length > 12) {
+    throw new Error("Structured daily brief headline is too long.");
+  }
+
+  return {
+    headline,
+    ...(learnYourSky || options.allowMissingLearnYourSky ? { learnYourSky: learnYourSky || undefined } : {}),
+    noticeWhen,
+    whyTodayFeelsThisWay,
+    yourMove
+  };
+}
+
+function renderStructuredDailyBriefParagraphs(brief: StructuredDailyBrief) {
+  const paragraphs = [brief.headline];
+
+  if (brief.noticeWhen.length) {
+    paragraphs.push(["Notice When", ...brief.noticeWhen.map((item) => `- ${item}`)].join("\n"));
+  }
+
+  paragraphs.push(["Why Today Feels This Way", ...brief.whyTodayFeelsThisWay].join("\n"));
+
+  if (brief.learnYourSky) {
+    paragraphs.push(`Learn Your Sky\n${brief.learnYourSky}`);
+  }
+
+  return paragraphs;
+}
+
+function buildDefaultDailySignals(input: ReadingEngineGenerationInput) {
+  const { moon, rising, sun } = readingEngineNames({
+    chart: input.chart,
+    displayName: input.displayName
+  });
+
+  const dominantTransitSummary = input.chart?.dominantTransit
+    ? `${input.chart.dominantTransit.transitBody} ${normalizeTransitAspect(input.chart.dominantTransit.aspect)} ${input.chart.dominantTransit.natalBody}`
+    : "current sky";
+
+  return [sun.label, moon.label, rising.label, dominantTransitSummary].filter(Boolean);
+}
+
+function buildDailyReadingEngineV2Result(
+  brief: StructuredDailyBrief,
+  input: ReadingEngineGenerationInput,
+  overrides: Partial<Pick<ReadingEngineV2Result, "dateLabel" | "signals" | "title">> = {}
+): ReadingEngineV2Result {
+  return {
+    dateLabel: overrides.dateLabel ?? buildReadingEngineV2DateLabel("daily", input.effectiveDate),
+    paragraphs: renderStructuredDailyBriefParagraphs(brief),
+    signals: overrides.signals ?? buildDefaultDailySignals(input),
+    structuredDailyBrief: brief,
+    title: overrides.title ?? "Today's Brief",
+    yourMove: brief.yourMove
+  };
+}
+
+function deriveStructuredDailyBriefFromContent(content: string, fallbackHeadline?: string): StructuredDailyBrief | null {
+  const normalizedContent = sanitizeReadingText(content).includes(" ") ? content.trim() : content;
+  const paragraphs = splitForecastParagraphs(normalizedContent);
+  if (!paragraphs.length) {
+    return null;
+  }
+
+  const move = extractStructuredDailyMove(normalizedContent);
+  const bodyWithoutMove = stripStructuredDailyMove(normalizedContent);
+  const bodyParagraphs = splitForecastParagraphs(bodyWithoutMove);
+
+  let headline = sanitizeReadingText(bodyParagraphs[0]);
+  const noticeWhen: string[] = [];
+  const whyTodayFeelsThisWay: string[] = [];
+  let learnYourSky = "";
+
+  for (let index = 1; index < bodyParagraphs.length; index += 1) {
+    const paragraph = bodyParagraphs[index];
+    const lines = paragraph
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (!lines.length) {
+      continue;
+    }
+
+    const heading = cleanStructuredDailyHeading(lines[0]);
+    if (heading === "notice when" || heading === "watch for") {
+      noticeWhen.push(
+        ...lines
+          .slice(1)
+          .map((line) => line.replace(/^[-*•]\s*/, "").replace(/^\d+[.)]\s*/, "").trim())
+          .filter(Boolean)
+      );
+      continue;
+    }
+
+    if (heading === "why today feels this way" || heading === "why today") {
+      whyTodayFeelsThisWay.push(...lines.slice(1).map(sanitizeReadingText).filter(Boolean));
+      continue;
+    }
+
+    if (heading === "learn your sky") {
+      learnYourSky = sanitizeReadingText(lines.slice(1).join(" "));
+      continue;
+    }
+
+    if (!headline) {
+      headline = sanitizeReadingText(paragraph);
+    } else {
+      whyTodayFeelsThisWay.push(sanitizeReadingText(paragraph));
+    }
+  }
+
+  if (!headline) {
+    headline =
+      splitReadingSentences(bodyParagraphs[0] ?? "").find((sentence) => sentence.trim().length > 12) ??
+      sanitizeReadingText(fallbackHeadline) ??
+      "";
+  }
+
+  const derived = {
+    headline,
+    learnYourSky: learnYourSky || undefined,
+    noticeWhen: noticeWhen.slice(0, 3),
+    whyTodayFeelsThisWay: whyTodayFeelsThisWay.length ? whyTodayFeelsThisWay : bodyParagraphs.slice(1),
+    yourMove: move
+  };
+
+  try {
+    return validateStructuredDailyBrief(derived, {
+      allowDerivedNoticeWhen: true,
+      allowMissingLearnYourSky: true
+    });
+  } catch {
+    return null;
+  }
+}
+
+function cleanStructuredDailyHeading(text: string) {
+  return text.replace(/^\*\*|\*\*$/g, "").replace(/:$/, "").trim().toLowerCase();
+}
+
+function splitReadingSentences(text: string) {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function stripStructuredDailyMove(text: string) {
+  return text.replace(/\n*\s*\*\*Your move:\*\*[\s\S]*$/i, "").trim();
+}
+
+function extractStructuredDailyMove(text: string) {
+  const match = text.match(/\*\*Your move:\*\*\s*([\s\S]*)$/i);
+  return sanitizeReadingText(match?.[1]);
+}
 
 function buildReadingEngineV2PromptPayload(input: ReadingEngineGenerationInput): ReadingEngineV2PromptPayload | null {
   if (!input.chart?.bigThree?.sun || !input.chart.bigThree.moon || !input.chart.bigThree.rising) {
     return null;
   }
+
+  const interpretationPacket = buildInterpretationPacket(input);
+  if (!interpretationPacket) {
+    return null;
+  }
+
+  const editorialBrief = buildEditorialBrief(interpretationPacket);
 
   const { firstName } = readingEngineNames({
     chart: input.chart,
@@ -1216,20 +1792,28 @@ function buildReadingEngineV2PromptPayload(input: ReadingEngineGenerationInput):
 
   return {
     system:
-      "You are the CosmoScope Reading Engine. CosmoScope reads the stars, then shows the path toward the member's most aligned self.",
+      "You are the CosmoScope Reading Engine. Your job is to turn an approved Editorial Brief into calm, useful prose without adding new astrology.",
     task:
-      "Generate one CosmoScope reading for the requested timeframe using only the provided chart, transit, member, and timeframe context.",
+      "Generate one CosmoScope reading for the requested timeframe using only the provided chart, editorial brief, member, and timeframe context. Treat the Editorial Brief as fully authoritative and act only as the writer.",
     rules: [
-      "Never stop at description. Name the pattern, reveal the pressure point, and show the path forward.",
-      "Use the member's Sun, Moon, Rising, dominant transit, and supporting transit signals naturally. Do not mechanically list every signal.",
+      "Prepare, do not predict.",
+      "Treat the Editorial Brief as authoritative. Do not infer, extend, or invent additional astrology beyond it.",
+      "Use the member's Sun, Moon, Rising, and the Editorial Brief naturally. Do not mechanically list every field.",
+      "Translate the Editorial Brief into concrete, recognizable daily-life situations.",
+      "Explain what the reader may notice, why it may matter, and how to work with it.",
+      "Use plain, natural language.",
+      "Sound calm, intelligent, grounded, and human.",
+      "Preserve uncertainty with phrases such as 'you may notice' or 'if this shows up.'",
       "Preserve member agency. Do not make guaranteed predictions.",
       "Do not imitate competitors, authors, celebrities, or famous-person personas.",
-      "Do not output generic horoscope filler.",
+      "Do not output generic horoscope filler, generic wellness language, therapy jargon, mystical cliches, or impressive-sounding abstractions.",
+      "Avoid these words and phrases unless directly required by the Editorial Brief: signal, pressure pattern, honest container, body-level clue, porous, nervous system, system wants, emotional charge, lower the noise, the universe wants, the stars are telling you.",
+      "Prefer concrete CosmoScope wording such as: 'You may notice that small delays feel more personal than usual,' 'If this shows up in a conversation, slow the pace before you decide what it means,' or 'This may matter because it can turn a minor choice into a larger reaction.'",
+      "Avoid abstract wording such as: 'The day carries a pressure pattern,' 'Your system wants a more honest container,' or 'Follow the signal until it becomes legible.'",
       "Do not mechanically reuse sign-tone fragments. Rewrite them naturally and grammatically.",
       "Avoid awkward constructions like 'the question of to find' or 'describes the central engine: to find'. If a sign drive begins with 'to', rewrite it as a natural noun phrase instead of inserting it mechanically.",
       "Do not mention being an AI, a model, a provider, or a system prompt.",
-      "Return valid JSON only with title, dateLabel, paragraphs, signals, and yourMove.",
-      "End with one practical Your move."
+      "Keep the reading between 180 and 260 words."
     ],
     input: {
       displayName: input.displayName,
@@ -1239,18 +1823,28 @@ function buildReadingEngineV2PromptPayload(input: ReadingEngineGenerationInput):
       chart: {
         sun: input.chart.bigThree.sun,
         moon: input.chart.bigThree.moon,
-        rising: input.chart.bigThree.rising,
-        dominantTransit: input.chart.dominantTransit,
-        transitSignals: input.chart.transitSignals?.slice(0, 5) ?? []
-      }
+        rising: input.chart.bigThree.rising
+      },
+      editorialBrief
     },
-    outputShape: {
-      title: "string",
-      dateLabel: "string",
-      paragraphs: "string[]",
-      signals: "string[]",
-      yourMove: "string"
-    }
+    outputShape:
+      input.timeframe === "daily"
+        ? {
+            structuredDailyBrief: {
+              headline: "string",
+              noticeWhen: ["string", "string", "string"],
+              yourMove: "string",
+              whyTodayFeelsThisWay: ["string"],
+              learnYourSky: "string?"
+            }
+          }
+        : {
+            title: "string",
+            dateLabel: "string",
+            paragraphs: "string[]",
+            signals: "string[]",
+            yourMove: "string"
+          }
   };
 }
 
@@ -1260,6 +1854,23 @@ function buildReadingEngineV2Prompt(input: ReadingEngineGenerationInput): string
     return null;
   }
 
+  const timeframeSpecificRules =
+    input.timeframe === "daily"
+      ? [
+          "For daily readings, return strict JSON matching the structuredDailyBrief shape exactly.",
+          "Headline rules: maximum 12 words, no planet names, no sign names, no mystical cliches, one useful human truth.",
+          "Notice When rules: return exactly 3 items, each concrete, observable, and specific.",
+          "Your Move rules: one concrete action, doable in under five minutes, no vague mindset advice.",
+          "Why Today Feels This Way rules: one or more concise explanatory paragraphs grounded in the member's Sun, Moon, Rising, and the Editorial Brief.",
+          "Learn Your Sky is optional. Include it only when one brief educational sentence can be grounded in the chart concept already provided.",
+          "Avoid these words and phrases in the daily brief unless directly required by the Editorial Brief: alignment, aligned, container, nervous system, pressure pattern, body-level clue, signal, noise, journey, embrace, manifest.",
+          "Do not return title, dateLabel, paragraphs, signals, or a duplicated Your Move field for daily. Return only structuredDailyBrief."
+        ]
+      : [
+          "Return valid JSON only with title, dateLabel, paragraphs, signals, and yourMove.",
+          "End with one specific practical action labeled 'Your move:'."
+        ];
+
   return [
     payload.system,
     "",
@@ -1267,6 +1878,7 @@ function buildReadingEngineV2Prompt(input: ReadingEngineGenerationInput): string
     "",
     "Rules:",
     ...payload.rules.map((rule) => `- ${rule}`),
+    ...timeframeSpecificRules.map((rule) => `- ${rule}`),
     "",
     "Input:",
     JSON.stringify(payload.input, null, 2),
@@ -1277,11 +1889,63 @@ function buildReadingEngineV2Prompt(input: ReadingEngineGenerationInput): string
 }
 
 type AiReadingProvider = {
-  generate(input: ReadingEngineGenerationInput): Promise<unknown>;
+  generate(input: ReadingEngineGenerationInput): Promise<AiReadingProviderResult>;
   name: string;
 };
 
-async function buildForecastContent(input: ReadingEngineGenerationInput) {
+type GeminiUsageMetadata = {
+  candidatesTokenCount?: unknown;
+  promptTokenCount?: unknown;
+  thoughtsTokenCount?: unknown;
+  totalTokenCount?: unknown;
+};
+
+type GeminiUsageSummary = {
+  candidatesTokenCount: number | null;
+  estimatedCostUsd: number | null;
+  promptTokenCount: number | null;
+  thoughtsTokenCount: number | null;
+  totalTokenCount: number | null;
+};
+
+type GeminiAttemptPhase = "before_headers" | "body_parse" | "response_processing" | "success";
+
+type GeminiFailureKind = "http" | "network" | "parse" | "response" | "timeout";
+
+type GeminiAttemptMetric = {
+  attempt: number;
+  elapsedMs: number;
+  failureKind: GeminiFailureKind | null;
+  phase: GeminiAttemptPhase;
+  retried: boolean;
+  status: number | null;
+};
+
+type GeminiGenerationTelemetry = {
+  attempts: GeminiAttemptMetric[];
+  retryOccurred: boolean;
+  totalElapsedMs: number;
+};
+
+type AiReadingProviderResult = {
+  reading: unknown;
+  telemetry?: GeminiGenerationTelemetry;
+  usage?: GeminiUsageSummary;
+};
+
+type ForecastBuildResult = {
+  content: string;
+  engine: "v1_fallback" | "v2_ai";
+  provider: string | null;
+  fallbackUsed: boolean;
+  ok: boolean;
+  errorMessage?: string;
+  structuredDailyBrief?: StructuredDailyBrief;
+  telemetry?: GeminiGenerationTelemetry;
+  usage?: GeminiUsageSummary;
+};
+
+async function buildForecastContentResult(input: ReadingEngineGenerationInput): Promise<ForecastBuildResult> {
   const v1Content = buildForecastCopy({
     chart: input.chart,
     displayName: input.displayName,
@@ -1290,41 +1954,112 @@ async function buildForecastContent(input: ReadingEngineGenerationInput) {
   });
 
   if (!isReadingEngineV2Enabled(input.env)) {
-    return v1Content;
+    return {
+      content: v1Content,
+      engine: "v1_fallback",
+      provider: null,
+      fallbackUsed: true,
+      ok: false,
+      errorMessage: "Reading Engine v2 is not enabled.",
+      structuredDailyBrief: input.timeframe === "daily" ? deriveStructuredDailyBriefFromContent(v1Content) ?? undefined : undefined
+    };
   }
 
   if (!input.hasChart || !hasUsableForecastPlacements(input.chart)) {
-    return v1Content;
+    return {
+      content: v1Content,
+      engine: "v1_fallback",
+      provider: null,
+      fallbackUsed: true,
+      ok: false,
+      errorMessage: "Chart placements are not complete enough for Reading Engine v2.",
+      structuredDailyBrief: input.timeframe === "daily" ? deriveStructuredDailyBriefFromContent(v1Content) ?? undefined : undefined
+    };
   }
 
   const provider = resolveAiReadingProvider(input.env);
   if (!provider) {
-    return v1Content;
+    return {
+      content: v1Content,
+      engine: "v1_fallback",
+      provider: input.env.AI_READING_PROVIDER?.trim().toLowerCase() || null,
+      fallbackUsed: true,
+      ok: false,
+      errorMessage: "No AI reading provider is available.",
+      structuredDailyBrief: input.timeframe === "daily" ? deriveStructuredDailyBriefFromContent(v1Content) ?? undefined : undefined
+    };
   }
 
   try {
-    const rawReading = await provider.generate(input);
-    const validated = validateReadingEngineV2Result(rawReading);
-    return renderReadingEngineV2Result(validated);
+    const providerResult = await provider.generate(input);
+    const validated = validateReadingEngineV2Result(providerResult.reading, input);
+    return {
+      content: renderReadingEngineV2Result(validated),
+      engine: "v2_ai",
+      provider: provider.name,
+      fallbackUsed: false,
+      ok: true,
+      structuredDailyBrief: validated.structuredDailyBrief,
+      telemetry: providerResult.telemetry,
+      usage: providerResult.usage
+    };
   } catch (error) {
     console.warn("Reading Engine v2 failed; falling back to v1.", {
       error,
       provider: provider.name,
       timeframe: input.timeframe
     });
-    return v1Content;
+    return {
+      content: v1Content,
+      engine: "v1_fallback",
+      provider: provider.name,
+      fallbackUsed: true,
+      ok: false,
+      errorMessage: buildSafeForecastFallbackErrorMessage(error),
+      structuredDailyBrief: input.timeframe === "daily" ? deriveStructuredDailyBriefFromContent(v1Content) ?? undefined : undefined,
+      telemetry: (error as GeminiRequestError)?.telemetry
+    };
   }
+}
+
+async function buildForecastContent(input: ReadingEngineGenerationInput) {
+  const result = await buildForecastContentResult(input);
+  return result.content;
+}
+
+function buildSafeForecastFallbackErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (!message) {
+    return "Reading Engine v2 could not complete the request.";
+  }
+
+  if (/api key/i.test(message) || /auth/i.test(message) || /permission/i.test(message)) {
+    return "Reading Engine v2 is not available with the current provider configuration.";
+  }
+
+  if (/json/i.test(message) || /extractable text/i.test(message) || /prompt data/i.test(message)) {
+    return "Reading Engine v2 returned an unusable response.";
+  }
+
+  return "Reading Engine v2 could not complete the request.";
 }
 
 function isReadingEngineV2Enabled(env: Env) {
   return env.READING_ENGINE_VERSION?.toLowerCase() === "v2" || env.ENABLE_AI_READINGS?.toLowerCase() === "true";
 }
 
+function isPaidAiSmokeEnabled(env: Env) {
+  return env.ENABLE_PAID_AI_SMOKE?.toLowerCase() === "true";
+}
+
 function isReadingEngineV2CachedContent(content: string) {
   const normalized = content.toLowerCase().replace(/[‘’]/g, "'");
 
   const explicitMockMarkers = [
-    "the pattern underneath the pattern",
+    "watch for",
+    "why today feels this way",
+    "learn your sky",
     "the week's actual story",
     "the month's deeper structure",
     "the year's larger assignment"
@@ -1391,6 +2126,16 @@ type GeminiInteractionResponse = {
   error?: {
     message?: unknown;
   };
+  usageMetadata?: GeminiUsageMetadata;
+};
+
+type GeminiRequestError = Error & {
+  kind?: GeminiFailureKind;
+  phase?: GeminiAttemptPhase;
+  telemetry?: GeminiGenerationTelemetry;
+  status?: number;
+  retriable?: boolean;
+  retryAfterMs?: number;
 };
 
 function extractGeminiOutputText(data: GeminiInteractionResponse): string {
@@ -1419,6 +2164,147 @@ function extractGeminiOutputText(data: GeminiInteractionResponse): string {
   return candidateText;
 }
 
+function createGeminiRequestError(
+  message: string,
+  details: Partial<Pick<GeminiRequestError, "kind" | "phase" | "retryAfterMs" | "retriable" | "status" | "telemetry">> = {}
+): GeminiRequestError {
+  return Object.assign(new Error(message), details);
+}
+
+function parseRetryAfterMs(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 0) {
+    return numeric * 1000;
+  }
+
+  const retryDate = Date.parse(value);
+  if (Number.isFinite(retryDate)) {
+    return Math.max(0, retryDate - Date.now());
+  }
+
+  return null;
+}
+
+function isRetriableGeminiStatus(status: number) {
+  return status === 429 || status >= 500;
+}
+
+function computeGeminiRetryDelayMs(
+  attempt: number,
+  retryAfterMs: number | null,
+  kind: GeminiRequestError["kind"] | undefined
+) {
+  if (kind === "timeout") {
+    return applyGeminiRetryJitter(attempt === 0 ? 900 : 1500);
+  }
+
+  if (retryAfterMs && retryAfterMs > 0) {
+    return Math.min(applyGeminiRetryJitter(retryAfterMs), 5000);
+  }
+
+  return applyGeminiRetryJitter(500 * 2 ** attempt);
+}
+
+function applyGeminiRetryJitter(delayMs: number) {
+  const jitterWindow = Math.max(75, Math.round(delayMs * 0.2));
+  return delayMs + Math.floor(Math.random() * jitterWindow);
+}
+
+function summarizeGeminiError(error: unknown) {
+  const geminiError = error as GeminiRequestError;
+
+  return {
+    kind: geminiError?.kind ?? "unknown",
+    message: error instanceof Error ? error.message : String(error),
+    phase: geminiError?.phase ?? null,
+    retriable: geminiError?.retriable ?? false,
+    retryAfterMs: geminiError?.retryAfterMs ?? null,
+    status: geminiError?.status ?? null,
+    timeoutMs: geminiError?.kind === "timeout" ? 45000 : null
+  };
+}
+
+function isGeminiTimeoutError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = typeof error.message === "string" ? error.message.toLowerCase() : "";
+  return error.name === "AbortError" || message.includes("gemini-timeout") || message.includes("timed out");
+}
+
+function normalizeGeminiUsageNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function estimateGeminiCostUsd(model: string, usage: GeminiUsageSummary) {
+  const pricing = getGeminiModelPricing(model);
+  if (!pricing) {
+    return null;
+  }
+
+  const inputTokens = usage.promptTokenCount ?? 0;
+  const outputTokens = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
+  const inputCost = (inputTokens / 1_000_000) * pricing.inputUsdPerMillion;
+  const outputCost = (outputTokens / 1_000_000) * pricing.outputUsdPerMillion;
+
+  return Number((inputCost + outputCost).toFixed(8));
+}
+
+function getGeminiModelPricing(model: string) {
+  const normalized = model.trim().toLowerCase();
+
+  // Internal pricing table used only for dev smoke observability.
+  if (
+    normalized === "gemini-2.5-flash" ||
+    normalized === "gemini-2.5-flash-standard" ||
+    normalized === "gemini-3.5-flash"
+  ) {
+    return {
+      inputUsdPerMillion: 0.3,
+      outputUsdPerMillion: 2.5
+    };
+  }
+
+  return null;
+}
+
+function buildGeminiUsageSummary(model: string, usageMetadata: GeminiUsageMetadata | undefined): GeminiUsageSummary | undefined {
+  if (!usageMetadata) {
+    return undefined;
+  }
+
+  const usage: GeminiUsageSummary = {
+    candidatesTokenCount: normalizeGeminiUsageNumber(usageMetadata.candidatesTokenCount),
+    estimatedCostUsd: null,
+    promptTokenCount: normalizeGeminiUsageNumber(usageMetadata.promptTokenCount),
+    thoughtsTokenCount: normalizeGeminiUsageNumber(usageMetadata.thoughtsTokenCount),
+    totalTokenCount: normalizeGeminiUsageNumber(usageMetadata.totalTokenCount)
+  };
+
+  usage.estimatedCostUsd = estimateGeminiCostUsd(model, usage);
+  return usage;
+}
+
+function buildGeminiGenerationConfig(model: string) {
+  const normalized = model.trim().toLowerCase();
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: 512,
+    responseMimeType: "application/json",
+    temperature: 0.7
+  };
+
+  if (normalized === "gemini-3.5-flash") {
+    generationConfig.thinkingLevel = "low";
+  }
+
+  return generationConfig;
+}
+
 function createGeminiReadingProvider(env: Env): AiReadingProvider {
   return {
     name: "gemini",
@@ -1431,42 +2317,167 @@ function createGeminiReadingProvider(env: Env): AiReadingProvider {
       }
 
       const model = env.AI_READING_MODEL?.trim() || "gemini-3.5-flash";
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": env.GEMINI_API_KEY ?? ""
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      const requestBody = JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: promptPayload.system }]
         },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: promptPayload.system }]
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            responseMimeType: "application/json"
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }]
           }
-        })
+        ],
+        generationConfig: buildGeminiGenerationConfig(model)
       });
 
-      const data = (await response.json().catch(() => ({}))) as GeminiInteractionResponse;
+      const maxAttempts = 2;
+      const timeoutMs = 45000;
+      const attempts: GeminiAttemptMetric[] = [];
+      const startedAtMs = Date.now();
 
-      if (!response.ok) {
-        const message = typeof data.error?.message === "string" ? data.error.message : `Gemini request failed with ${response.status}`;
-        throw new Error(message);
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort("gemini-timeout"), timeoutMs);
+        const attemptNumber = attempt + 1;
+        const attemptStartedAtMs = Date.now();
+        let phase: GeminiAttemptPhase = "before_headers";
+        let responseStatus: number | null = null;
+
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": env.GEMINI_API_KEY ?? ""
+            },
+            body: requestBody,
+            signal: controller.signal
+          });
+          responseStatus = response.status;
+          phase = "body_parse";
+
+          let data: GeminiInteractionResponse;
+          try {
+            data = (await response.json()) as GeminiInteractionResponse;
+          } catch {
+            throw createGeminiRequestError("Gemini response body could not be parsed.", {
+              kind: "parse",
+              phase,
+              retriable: false,
+              status: responseStatus
+            });
+          }
+
+          if (!response.ok) {
+            const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+            const message =
+              typeof data.error?.message === "string" ? data.error.message : `Gemini request failed with ${response.status}`;
+            throw createGeminiRequestError(message, {
+              kind: "http",
+              phase,
+              retriable: isRetriableGeminiStatus(response.status),
+              retryAfterMs: retryAfterMs ?? undefined,
+              status: response.status
+            });
+          }
+
+          phase = "response_processing";
+          const outputText = extractGeminiOutputText(data);
+          if (!outputText) {
+            throw createGeminiRequestError("Gemini response did not include extractable text.", {
+              kind: "response",
+              phase,
+              retriable: false,
+              status: responseStatus
+            });
+          }
+
+          const usage = buildGeminiUsageSummary(model, data.usageMetadata);
+          const elapsedMs = Date.now() - attemptStartedAtMs;
+          attempts.push({
+            attempt: attemptNumber,
+            elapsedMs,
+            failureKind: null,
+            phase: "success",
+            retried: false,
+            status: responseStatus
+          });
+
+          return {
+            reading: parseReadingEngineV2ProviderOutput(outputText, input),
+            telemetry: {
+              attempts,
+              retryOccurred: attempts.length > 1,
+              totalElapsedMs: Date.now() - startedAtMs
+            },
+            usage
+          };
+        } catch (error) {
+          const normalizedError = isGeminiTimeoutError(error)
+            ? createGeminiRequestError("Gemini request timed out.", {
+                phase,
+                kind: "timeout",
+                retriable: true
+              })
+            : error instanceof Error
+              ? (error as GeminiRequestError)
+              : createGeminiRequestError("Gemini request failed.", {
+                  kind: "network",
+                  phase,
+                  retriable: true
+                });
+
+          const shouldRetry = Boolean(normalizedError.retriable) && attempt < maxAttempts - 1;
+          const elapsedMs = Date.now() - attemptStartedAtMs;
+          attempts.push({
+            attempt: attemptNumber,
+            elapsedMs,
+            failureKind: normalizedError.kind ?? "network",
+            phase: normalizedError.phase ?? phase,
+            retried: shouldRetry,
+            status: normalizedError.status ?? responseStatus
+          });
+          normalizedError.telemetry = {
+            attempts: [...attempts],
+            retryOccurred: attempts.some((entry) => entry.retried),
+            totalElapsedMs: Date.now() - startedAtMs
+          };
+
+          console.warn("Gemini reading request failed.", {
+            attempt: attemptNumber,
+            maxAttempts,
+            model,
+            elapsedMs,
+            ...summarizeGeminiError(normalizedError),
+            timeoutMs,
+            willRetry: shouldRetry
+          });
+
+          if (!shouldRetry) {
+            throw normalizedError;
+          }
+
+          const delayMs = computeGeminiRetryDelayMs(
+            attempt,
+            normalizedError.retryAfterMs ?? null,
+            normalizedError.kind
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        } finally {
+          clearTimeout(timeoutId);
+        }
       }
 
-      const outputText = extractGeminiOutputText(data);
-      if (!outputText) {
-        throw new Error("Gemini response did not include extractable text.");
-      }
-
-      return parseReadingEngineV2ProviderOutput(outputText, input);
+      throw createGeminiRequestError("Gemini request failed after retry.", {
+        kind: "network",
+        retriable: false,
+        telemetry: {
+          attempts,
+          retryOccurred: attempts.some((entry) => entry.retried),
+          totalElapsedMs: Date.now() - startedAtMs
+        }
+      });
     }
   };
 }
@@ -1509,25 +2520,35 @@ function convertReadingEngineV2ProseToResult(outputText: string, input: ReadingE
     displayName: input.displayName
   });
 
-  const pressure = input.chart?.dominantTransit
-    ? `${input.chart.dominantTransit.transitBody} in ${input.chart.dominantTransit.transitSign} pressing on ${input.chart.dominantTransit.natalBody}`
-    : "the current sky";
+  const fallbackSignals = buildDefaultDailySignals(input);
+  const fallbackTitle =
+    input.timeframe === "daily"
+      ? "Today's Brief"
+      : input.timeframe === "weekly"
+        ? "Weekly breakdown"
+        : input.timeframe === "monthly"
+          ? "Monthly structure"
+          : "Yearly blueprint";
+
+  if (input.timeframe === "daily") {
+    const derivedBrief = deriveStructuredDailyBriefFromContent(trimmed, paragraphs[0] ?? trimmed);
+    if (derivedBrief) {
+      return buildDailyReadingEngineV2Result(derivedBrief, input, {
+        dateLabel: buildReadingEngineV2DateLabel("daily", input.effectiveDate),
+        signals: fallbackSignals,
+        title: fallbackTitle
+      });
+    }
+  }
 
   return {
-    title:
-      input.timeframe === "daily"
-        ? "Daily decoding"
-        : input.timeframe === "weekly"
-          ? "Weekly breakdown"
-          : input.timeframe === "monthly"
-            ? "Monthly structure"
-            : "Yearly blueprint",
+    title: fallbackTitle,
     dateLabel: buildReadingEngineV2DateLabel(input.timeframe, input.effectiveDate),
     paragraphs: paragraphs.length ? paragraphs : [trimmed],
-    signals: [sun.label, moon.label, rising.label, pressure, "path forward"],
+    signals: fallbackSignals,
     yourMove:
       yourMove ||
-      "Choose the next step that brings your timing, energy, and truth back into alignment."
+      "Choose one concrete step that makes the day easier to move through with clarity."
   };
 }
 
@@ -1561,78 +2582,114 @@ function createMockAiReadingProvider(): AiReadingProvider {
       const dateLabel = buildReadingEngineV2DateLabel(input.timeframe, input.effectiveDate);
 
       if (input.timeframe === "daily") {
-        return {
-          title: "Daily decoding",
-          dateLabel,
-          paragraphs: [
-            `${firstName}, the pattern underneath the pattern today is that your instinct may be moving faster than your clarity. ${capitalizeFirst(sun.label)} wants ${sun.tone.drive}, but your most aligned self does not need to chase every signal to prove the path is real.`,
-            `${capitalizeFirst(moon.label)} needs ${moon.tone.need}. If that need is ignored, ordinary friction can start pretending to be an emergency. If it is honored, you get your leverage back before the noise makes decisions for you.`,
-            `${capitalizeFirst(rising.label)} is the doorway other people meet first. Today, let ${rising.tone.style} become a filter, not a flood. You can be open without giving every room access to your whole nervous system.`,
-            `${pressure} gives the day its pressure point: the temptation to make certainty louder than truth. The aligned path is quieter. Choose the sentence, boundary, or next step that brings your energy back into agreement with what you already know.`
+        const headline =
+          signal?.transitBody === "Mercury"
+            ? "Clearer pacing keeps the day from tangling."
+            : "Small pauses improve the day quickly.";
+        const structuredDailyBrief = validateStructuredDailyBrief({
+          headline,
+          noticeWhen: [
+            "You start drafting a reply before you have finished reading the message.",
+            "A quick decision feels harder once a second opinion enters the room.",
+            "You explain your point twice when one sentence would have done the job."
           ],
-          signals: [sun.label, moon.label, rising.label, pressure, "cleaner timing", "less performance"],
-          yourMove:
-            "Pick one place where you are tempted to over-explain. Say the truer thing in fewer words, then let the result show you what is actually aligned."
-        } satisfies ReadingEngineV2Result;
+          yourMove: "Pause for one full minute before sending your next important message, then cut one unnecessary sentence.",
+          whyTodayFeelsThisWay: [
+            `${capitalizeFirst(sun.label)} keeps your attention moving toward what feels most important, while ${capitalizeFirst(moon.label)} affects how quickly the moment starts feeling personal.`,
+            `${capitalizeFirst(rising.label)} shapes the tone other people meet first. ${signal ? `${signal.transitBody} in ${signal.transitSign} adds extra emphasis around timing and delivery, so careful wording does more for you than fast wording.` : "The current sky puts extra value on timing, so a slower response may be the stronger response."}`,
+            "None of this predicts the day for you. It simply shows where steadier pacing can keep ordinary friction from growing into something larger."
+          ],
+          learnYourSky: "Your Rising sign affects first impressions, while the day’s transit layer changes how quickly conversations heat up or settle down."
+        });
+
+        return {
+          reading: {
+            dateLabel,
+            signals: [sun.label, moon.label, rising.label, pressure, "clear communication", "timing"],
+            structuredDailyBrief,
+            title: "Today's Brief",
+            yourMove: structuredDailyBrief.yourMove
+          } satisfies Partial<ReadingEngineV2Result>
+        };
       }
 
       if (input.timeframe === "weekly") {
         return {
-          title: "Weekly breakdown",
-          dateLabel,
-          paragraphs: [
-            `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from noticing where ${sun.label}, ${moon.label}, and ${rising.label} are asking you to stop performing certainty and start moving from alignment.`,
-            `Early in the week, ${sun.label} wants ${sun.tone.drive}. That can be powerful, but only if you stop confusing motion with alignment. The first win is not a dramatic leap; it is refusing to spend your life force on a decision that has not earned it.`,
-            `Midweek, ${moon.label} becomes the truth serum. It needs ${moon.tone.need}. Notice what gets louder when you are tired, rushed, or trying to keep everyone else comfortable.`,
-            `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you return to the world with more signal and less residue. Your most aligned self does not need to drag the whole emotional weather system into every room.`,
-            `${pressure} marks the week’s pressure point: the urge to dramatize friction instead of reading it. The path forward is to treat friction as information, not a verdict.`
-          ],
-          signals: [sun.label, moon.label, rising.label, pressure, "sequence", "emotional weather"],
-          yourMove:
-            "Choose the repeating situation that keeps asking for your attention. Decide whether it needs action, a boundary, or simply less performance from you."
-        } satisfies ReadingEngineV2Result;
+          reading: {
+            title: "Weekly breakdown",
+            dateLabel,
+            paragraphs: [
+              `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from noticing where ${sun.label}, ${moon.label}, and ${rising.label} are asking you to stop performing certainty and start moving from alignment.`,
+              `Early in the week, ${sun.label} wants ${sun.tone.drive}. That can be powerful, but only if you stop confusing motion with alignment. The first win is not a dramatic leap; it is refusing to spend your life force on a decision that has not earned it.`,
+              `Midweek, ${moon.label} becomes the truth serum. It needs ${moon.tone.need}. Notice what gets louder when you are tired, rushed, or trying to keep everyone else comfortable.`,
+              `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you return to the world with more signal and less residue. Your most aligned self does not need to drag the whole emotional weather system into every room.`,
+              `${pressure} marks the week’s pressure point: the urge to dramatize friction instead of reading it. The path forward is to treat friction as information, not a verdict.`
+            ],
+            signals: [sun.label, moon.label, rising.label, pressure, "sequence", "emotional weather"],
+            yourMove:
+              "Choose the repeating situation that keeps asking for your attention. Decide whether it needs action, a boundary, or simply less performance from you."
+          } satisfies ReadingEngineV2Result
+        };
       }
 
       if (input.timeframe === "monthly") {
         return {
-          title: "Monthly structure",
-          dateLabel,
-          paragraphs: [
-            `${firstName}, the month’s deeper structure is not asking you to become someone else. It is asking you to notice where your current container no longer fits the life trying to come through.`,
-            `${capitalizeFirst(sun.label)} shows where the month wants movement: ${sun.tone.drive}. But your most aligned self does not move just to prove growth is happening. It moves when the timing, truth, and next step begin to agree.`,
-            `${capitalizeFirst(moon.label)} names the emotional term that cannot be skipped: ${moon.tone.need}. If that need is treated as optional, the month gets noisier. If it is honored, your choices start working with your energy instead of against it.`,
-            `${capitalizeFirst(rising.label)} is the public-facing adjustment. This month, the path forward is not simply to be more visible. It is to become more legible to the right people, in the right rooms, for the right reasons.`,
-            `${pressure} gives the month its repeating signal. When the same theme returns, do not call it failure. Call it evidence. The pattern is showing you what needs a stronger structure, a cleaner boundary, or a more honest belief.`
-          ],
-          signals: [sun.label, moon.label, rising.label, pressure, "structure", "legibility"],
-          yourMove:
-            "Name one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s aligned priority."
-        } satisfies ReadingEngineV2Result;
+          reading: {
+            title: "Monthly structure",
+            dateLabel,
+            paragraphs: [
+              `${firstName}, the month’s deeper structure is not asking you to become someone else. It is asking you to notice where your current container no longer fits the life trying to come through.`,
+              `${capitalizeFirst(sun.label)} shows where the month wants movement: ${sun.tone.drive}. But your most aligned self does not move just to prove growth is happening. It moves when the timing, truth, and next step begin to agree.`,
+              `${capitalizeFirst(moon.label)} names the emotional term that cannot be skipped: ${moon.tone.need}. If that need is treated as optional, the month gets noisier. If it is honored, your choices start working with your energy instead of against it.`,
+              `${capitalizeFirst(rising.label)} is the public-facing adjustment. This month, the path forward is not simply to be more visible. It is to become more legible to the right people, in the right rooms, for the right reasons.`,
+              `${pressure} gives the month its repeating signal. When the same theme returns, do not call it failure. Call it evidence. The pattern is showing you what needs a stronger structure, a cleaner boundary, or a more honest belief.`
+            ],
+            signals: [sun.label, moon.label, rising.label, pressure, "structure", "legibility"],
+            yourMove:
+              "Name one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s aligned priority."
+          } satisfies ReadingEngineV2Result
+        };
       }
 
       return {
-        title: "Yearly blueprint",
-        dateLabel,
-        paragraphs: [
-          `${firstName}, the year’s larger assignment is to build a life that can hold more truth without requiring constant emergency energy.`,
-          `${capitalizeFirst(sun.label)} shows the direction of becoming: ${sun.tone.drive}. ${capitalizeFirst(moon.label)} shows the emotional term that cannot be skipped: ${moon.tone.need}. ${capitalizeFirst(rising.label)} shows how the world keeps asking you to become more legible without becoming less yourself.`,
-          `This is not reinvention for spectacle. It is the construction of a cleaner container for the person you already know you are becoming. The old version of you may still be negotiating, but the future version needs practical advantages, not just hope.`,
-          `${pressure} gives the year its pressure point. Pay attention to where the same lesson keeps wearing different clothes. That is where your life is asking for a more honest architecture: a choice, structure, or belief that lets your most aligned self become easier to live from.`
-        ],
-        signals: [sun.label, moon.label, rising.label, pressure, "larger assignment", "honest architecture"],
-        yourMove:
-          "Pick the area of life where the old version of you keeps negotiating with the future version. Give your most aligned self one practical advantage this week."
-      } satisfies ReadingEngineV2Result;
+        reading: {
+          title: "Yearly blueprint",
+          dateLabel,
+          paragraphs: [
+            `${firstName}, the year’s larger assignment is to build a life that can hold more truth without requiring constant emergency energy.`,
+            `${capitalizeFirst(sun.label)} shows the direction of becoming: ${sun.tone.drive}. ${capitalizeFirst(moon.label)} shows the emotional term that cannot be skipped: ${moon.tone.need}. ${capitalizeFirst(rising.label)} shows how the world keeps asking you to become more legible without becoming less yourself.`,
+            `This is not reinvention for spectacle. It is the construction of a cleaner container for the person you already know you are becoming. The old version of you may still be negotiating, but the future version needs practical advantages, not just hope.`,
+            `${pressure} gives the year its pressure point. Pay attention to where the same lesson keeps wearing different clothes. That is where your life is asking for a more honest architecture: a choice, structure, or belief that lets your most aligned self become easier to live from.`
+          ],
+          signals: [sun.label, moon.label, rising.label, pressure, "larger assignment", "honest architecture"],
+          yourMove:
+            "Pick the area of life where the old version of you keeps negotiating with the future version. Give your most aligned self one practical advantage this week."
+        } satisfies ReadingEngineV2Result
+      };
     }
   };
 }
 
-function validateReadingEngineV2Result(value: unknown): ReadingEngineV2Result {
+function validateReadingEngineV2Result(value: unknown, input: ReadingEngineGenerationInput): ReadingEngineV2Result {
   if (!value || typeof value !== "object") {
     throw new Error("Reading Engine v2 returned a non-object payload.");
   }
 
   const record = value as Record<string, unknown>;
+
+  if (input.timeframe === "daily" && record.structuredDailyBrief) {
+    const structuredDailyBrief = validateStructuredDailyBrief(record.structuredDailyBrief);
+    const result = buildDailyReadingEngineV2Result(structuredDailyBrief, input, {
+      dateLabel: sanitizeReadingText(record.dateLabel) || buildReadingEngineV2DateLabel("daily", input.effectiveDate),
+      signals: Array.isArray(record.signals)
+        ? record.signals.map(sanitizeReadingText).filter(Boolean).slice(0, 8)
+        : buildDefaultDailySignals(input),
+      title: sanitizeReadingText(record.title) || "Today's Brief"
+    });
+    assertValidReadingEngineV2Copy(renderReadingEngineV2Result(result));
+    return result;
+  }
+
   const title = sanitizeReadingText(record.title);
   const dateLabel = sanitizeReadingText(record.dateLabel);
   const paragraphs = Array.isArray(record.paragraphs)
@@ -1650,16 +2707,26 @@ function validateReadingEngineV2Result(value: unknown): ReadingEngineV2Result {
   const rendered = [...paragraphs, yourMove].join(" ");
   assertValidReadingEngineV2Copy(rendered);
 
-  return {
+  const result: ReadingEngineV2Result = {
     dateLabel,
     paragraphs,
     signals,
     title,
     yourMove
   };
+
+  if (input.timeframe === "daily") {
+    result.structuredDailyBrief = deriveStructuredDailyBriefFromContent(renderReadingEngineV2Result(result)) ?? undefined;
+  }
+
+  return result;
 }
 
 function renderReadingEngineV2Result(reading: ReadingEngineV2Result) {
+  if (reading.structuredDailyBrief) {
+    return `${renderStructuredDailyBriefParagraphs(reading.structuredDailyBrief).join("\n\n")}\n\n**Your move:** ${reading.structuredDailyBrief.yourMove}`;
+  }
+
   return `${reading.paragraphs.join("\n\n")}\n\n**Your move:** ${reading.yourMove}`;
 }
 

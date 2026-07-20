@@ -126,6 +126,7 @@ Default Worker vars:
 - READING_ENGINE_VERSION=v1
 - ENABLE_AI_READINGS=false
 - AI_READING_PROVIDER=mock
+- ENABLE_PAID_AI_SMOKE=false
 
 Local mock-provider testing can enable V2 without model credits:
 READING_ENGINE_VERSION=v2 ENABLE_AI_READINGS=true AI_READING_PROVIDER=mock pnpm --filter @cosmoscope/worker dev
@@ -137,11 +138,22 @@ Expected behavior:
 - Provider errors fall back to V1 and never expose raw model errors to members.
 - Existing forecast_cache still prevents repeated generation for the same member, timeframe, and effective date.
 
-Direct V2 smoke-test flow:
+Free mock flow:
 1. Start the Worker locally with V2 mock env flags.
 2. Signup a fresh member.
 3. Call /api/chart.
 4. Call /api/forecast with daily and weekly.
-5. Verify daily includes Jeff and the phrase “the pattern underneath the pattern.”
+5. Verify daily returns a structured Today’s Brief shape and a rendered legacy `content` string.
 6. Verify weekly includes “the week’s actual story.”
 7. Verify there is no “Your your,” “Sun Sun,” “Moon Moon,” or “Rising Rising.”
+
+Paid Gemini smoke routes:
+- `POST /api/dev/reading-engine-v2-gemini-smoke`
+  - Requires `ENABLE_PAID_AI_SMOKE=true`
+  - Requires `x-cosmoscope-dev-smoke: reading-engine-v2`
+  - Returns attempt telemetry, token usage, and estimated cost for one request
+- `POST /api/dev/reading-engine-v2-gemini-batch`
+  - Requires `ENABLE_PAID_AI_SMOKE=true`
+  - Requires `x-cosmoscope-dev-smoke: reading-engine-v2`
+  - Accepts an optional JSON body with `timeframe`, `displayName`, and `iterations` (1-3, default 1)
+  - Runs requests sequentially and reports success rate, latency, failure kinds, and average estimated cost

@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { API_PATHS } from "@cosmoscope/api";
 import { PREMIUM_PRODUCTS } from "@cosmoscope/api/products";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_COSMOSCOPE_API_BASE_URL?.trim() || "https://cosmoscope-api.jeff-green-5aa.workers.dev";
+import { UnderstandWhySection, TodaysBriefPanel } from "../components/TodaysBriefSections";
+import { resolveTodaysBriefData, type StructuredDailyBrief } from "../components/todaysBriefData";
+import { resolveCosmoScopeApiBaseUrl } from "../lib/apiBaseUrl";
 
 type Mode = "signup" | "login";
 type Phase = "auth" | "loading" | "member";
@@ -95,6 +95,7 @@ type ForecastResponse = {
   cached: boolean;
   content: string;
   effectiveDate: string;
+  structuredDailyBrief?: StructuredDailyBrief | null;
   timeframe: ForecastTimeframe;
 };
 
@@ -138,10 +139,10 @@ type ResolvedBirthLocation = Pick<GeocodeResult, "label" | "latitude" | "longitu
 const SESSION_STORAGE_KEY = "cosmoscope-access-token";
 const signupSteps: SignupStep[] = ["welcome", "name", "account", "birthDate", "birthTime", "birthPlace", "review"];
 const forecastLabels: Record<ForecastTimeframe, string> = {
-  daily: "Daily decoding",
-  weekly: "Weekly breakdown",
-  monthly: "Monthly structure",
-  yearly: "Yearly blueprint"
+  daily: "Today’s Brief",
+  weekly: "This Week",
+  monthly: "This Month",
+  yearly: "This Year"
 };
 
 const placementKickers = ["Sun sign", "Moon sign", "Rising sign"] as const;
@@ -241,34 +242,6 @@ function splitParagraphs(text: string | null | undefined) {
     .filter(Boolean);
 }
 
-function splitSentences(text: string | null | undefined) {
-  if (!text) {
-    return [];
-  }
-
-  return text
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
-
-function stripMoveLabel(text: string | null | undefined) {
-  if (!text) {
-    return "";
-  }
-
-  return text.replace(/\n*\s*\*\*Your move:\*\*[\s\S]*$/i, "").trim();
-}
-
-function extractMoveText(text: string | null | undefined) {
-  if (!text) {
-    return "";
-  }
-
-  const match = text.match(/\*\*Your move:\*\*\s*([\s\S]*)$/i);
-  return match?.[1]?.trim() ?? "";
-}
-
 function toDisplayName(source: string) {
   return source
     .split(/[@._-]+/)
@@ -357,15 +330,6 @@ function buildGlobalClimateReading(signal: TransitSignal | undefined) {
   };
 }
 
-function buildDailyReading(sentences: string[], chartBigThree: string, firstName: string, signal: TransitSignal | undefined) {
-  const primary = sentences.slice(0, 5).join(" ");
-  const secondary =
-    sentences.slice(5).join(" ") ||
-    `${firstName}, this is the kind of day where ${chartBigThree || "your chart"} benefits from pacing, cleaner language, and fewer reactive decisions. ${signal ? `${signal.transitBody} is making urgency louder than wisdom, so give important choices more room before you lock them in.` : "If the day feels louder than usual, take that as a cue to simplify rather than intensify."}`;
-
-  return { primary, secondary };
-}
-
 function buildWeeklySupport(chartBigThree: string, signal: TransitSignal | undefined) {
   return {
     opening: "The beginning of the week asks for more patience than pride. If you rush to prove a point too early, you can waste energy that would be better used building leverage.",
@@ -379,7 +343,7 @@ function buildWeeklySupport(chartBigThree: string, signal: TransitSignal | undef
       ["Tuesday", "Expect stronger reactions around communication. Clarify before you commit."],
       ["Wednesday", "Momentum improves when you stop over-explaining and move one task at a time."],
       ["Thursday", signal ? `${signal.transitBody} sharpens the atmosphere. Confidence helps, but force will backfire.` : "Stay measured. Push only what is genuinely ready."],
-      ["Friday", "People become easier to read. Use the day for alignment, not correction."],
+      ["Friday", "People become easier to read. Use the day for repair, not correction."],
       ["Saturday", "Let the pace soften. What you process privately now will help next week land better."],
       ["Sunday", "Use the day to reset your priorities and leave unfinished tension where it belongs."]
     ] as Array<[string, string]>
@@ -522,6 +486,7 @@ export function LiveExperience() {
   const [loveScope, setLoveScope] = useState<LoveScopeResponse | null>(null);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const memberLabel = useMemo(() => {
     return normalizeMemberLabel(displayName, email);
@@ -598,7 +563,72 @@ export function LiveExperience() {
           setToolStatus(null);
         });
     }
+
+    if (checkout === "cancel" || checkout === "cancelled" || checkout === "canceled" || checkout === "failed") {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("checkout");
+      cleanUrl.searchParams.delete("session_id");
+      cleanUrl.searchParams.delete("product");
+      window.history.replaceState({}, "", cleanUrl.toString());
+      setError(null);
+      setToolStatus("Checkout was cancelled. Nothing was charged.");
+    }
   }, [accessToken]);
+
+  function clearHandledCheckoutParams() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("checkout");
+    cleanUrl.searchParams.delete("session_id");
+    cleanUrl.searchParams.delete("product");
+    window.history.replaceState({}, "", cleanUrl.toString());
+  }
+
+  function clearLocalSession(message: string | null = null) {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      clearHandledCheckoutParams();
+    }
+
+    setMode("login");
+    setSignupStep("welcome");
+    setPhase("auth");
+    setEmail("");
+    setPassword("");
+    setDisplayName("");
+    setBirthPlace("");
+    setBirthMonth("");
+    setBirthDay("");
+    setBirthYear("");
+    setBirthHour("");
+    setBirthMinute("");
+    setBirthMeridiem("AM");
+    setUnknownBirthTime(false);
+    setGeocodeResults([]);
+    setSelectedLocation(null);
+    setLocationStatus("idle");
+    setAccessToken(null);
+    setChart(null);
+    setEntitlements(null);
+    setForecasts({});
+    setActiveForecast("daily");
+    setStarQuestion("What deserves my cleanest attention this week?");
+    setStarScope(null);
+    setPartnerName("Alex");
+    setRelationshipType("Dating");
+    setLoveSituation("The connection is strong, but the expectations are not fully named.");
+    setLoveScope(null);
+    setError(null);
+    setToolStatus(message);
+    setIsDeletingAccount(false);
+  }
+
+  function handleSignOut() {
+    clearLocalSession("You have been signed out on this device.");
+  }
 
   async function handleLocationSearch() {
     setSelectedLocation(null);
@@ -1125,6 +1155,38 @@ export function LiveExperience() {
     }
   }
 
+  async function handleDeleteAccount() {
+    if (!accessToken || isDeletingAccount) {
+      return;
+    }
+
+    const confirmed =
+      typeof window !== "undefined" &&
+      window.confirm(
+        "Delete your CosmoScope account? This removes your login, chart, readings, and premium access from this account. This cannot be undone."
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setError(null);
+    setToolStatus("Deleting account...");
+
+    try {
+      await request<void>(API_PATHS.deleteAccount, {
+        headers: authHeaders(accessToken),
+        method: "POST"
+      });
+      clearLocalSession("Your CosmoScope account has been deleted.");
+    } catch (caught) {
+      setIsDeletingAccount(false);
+      setError(caught instanceof Error ? caught.message : "Unable to delete the account.");
+      setToolStatus(null);
+    }
+  }
+
   const forecastTabs: ForecastTimeframe[] = ["daily", "weekly", "monthly", "yearly"];
   const activeForecastCopy = forecasts[activeForecast];
   const chartPlanets = chart?.chart?.planets ?? [];
@@ -1151,26 +1213,38 @@ export function LiveExperience() {
     }
   ];
   const cleanedForecastContent = sanitizeUserFacingCopy(activeForecastCopy?.content, memberLabel);
-  const moveText = extractMoveText(cleanedForecastContent);
-  const forecastBody = stripMoveLabel(cleanedForecastContent);
+  const forecastBody = cleanedForecastContent;
   const forecastParagraphs = splitParagraphs(forecastBody);
-  const forecastSentences = splitSentences(forecastBody);
   const cleanedChartSummary = sanitizeUserFacingCopy(chart?.summary, memberLabel);
   const chartSummaryParagraphs = splitParagraphs(cleanedChartSummary);
   const blueprintPrice = PREMIUM_PRODUCTS.yearly_blueprint.priceLabel;
   const globalClimate = buildGlobalClimateReading(transitSignal);
-  const dailyReading = buildDailyReading(forecastSentences, chartBigThree, firstName, transitSignal);
   const weeklySupport = buildWeeklySupport(chartBigThree, transitSignal);
-  const monthlyNarrative = chunkSentences(forecastSentences, 2);
+  const monthlyNarrative = chunkSentences(
+    forecastBody
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean),
+    2
+  );
   const activeForecastProductKey = checkoutProductForForecast(activeForecast);
   const activeForecastProduct = activeForecastProductKey ? PREMIUM_PRODUCTS[activeForecastProductKey] : null;
   const activeForecastLocked = activeForecastProductKey ? !canAccessForecast(activeForecast) : false;
+  const isActiveSignupIntake = mode === "signup" && signupStep !== "welcome";
   const activeForecastLockTitle =
-    activeForecast === "monthly" ? "Monthly Structure is a premium reading." : "The Yearly Blueprint is a premium publication.";
+    activeForecast === "monthly" ? "This Month is a premium reading." : "This Year is a premium publication.";
   const activeForecastLockCopy =
     activeForecast === "monthly"
       ? "Unlock this month’s timing map for a clearer view of the patterns, pressure points, and better windows ahead."
       : "Unlock the full long-form yearly reading so your bigger decisions have a stronger frame around them.";
+  const dailyBrief = resolveTodaysBriefData({
+    content: cleanedForecastContent,
+    fallbackHeadline:
+      forecastParagraphs[0] ||
+      `Today asks ${firstName} for steadier pacing and clearer choices.` ||
+      "A clearer daily reading will appear here once the latest forecast finishes loading.",
+    structuredDailyBrief: activeForecastCopy?.structuredDailyBrief ?? null
+  });
 
   return (
     <main className="live-shell">
@@ -1179,27 +1253,34 @@ export function LiveExperience() {
           CosmoScope
         </a>
         <a className="button-secondary" href="/beta-feedback">
-          Beta feedback
+          Share feedback
         </a>
       </header>
 
       {phase === "auth" ? (
-        <section className="live-auth fade-up">
+        <section className={`live-auth fade-up${isActiveSignupIntake ? " live-auth--intake" : ""}`}>
           <div className="live-auth-copy">
-            <p className="timestamp">Private reading from exact data.</p>
-            <h1 className="demo-hero">The CosmoScope reads the pattern back to you.</h1>
+            <p className="timestamp">Personal astrological guidance from exact birth data.</p>
+            <h1 className="demo-hero">
+              <span>Understand today&apos;s astrological weather.</span>
+              <span>Know how to move through it.</span>
+            </h1>
             <p className="live-note">
-              Give it the clearest record you can. It will return your core placements, today&apos;s reading, and the larger pattern shaping the week, month, and year.
+              CosmoScope connects your natal chart with the current sky to show what deserves your attention today -
+              and how to meet it with greater clarity, confidence, and calm.
             </p>
           </div>
 
           <form
-            className="live-form"
+            className={`live-form${isActiveSignupIntake ? " live-form--active-intake" : ""}`}
             onSubmit={(event) => {
               event.preventDefault();
               void (mode === "signup" ? handleSignupContinue() : handleSubmit());
             }}
           >
+            <div className="live-celestial-mark" aria-hidden="true">
+              <span />
+            </div>
             <div className="mode-row" role="tablist" aria-label="Account mode">
               <button
                 aria-selected={mode === "signup"}
@@ -1242,6 +1323,7 @@ export function LiveExperience() {
                   <section className="live-intake-step">
                     <p className="reading-kicker">Name</p>
                     <h2>What should the CosmoScope call you?</h2>
+                    <p className="live-step-help">This personalizes how your guidance speaks to you.</p>
                     <label className="demo-field live-field">
                       <span>Display name</span>
                       <input
@@ -1258,6 +1340,7 @@ export function LiveExperience() {
                   <section className="live-intake-step">
                     <p className="reading-kicker">Account</p>
                     <h2>Where should we save your reading?</h2>
+                    <p className="live-step-help">Your chart and readings stay connected to your private account.</p>
                     <label className="demo-field live-field">
                       <span>Email</span>
                       <input
@@ -1286,7 +1369,8 @@ export function LiveExperience() {
                 {signupStep === "birthDate" ? (
                   <section className="live-intake-step">
                     <p className="reading-kicker">Birth date</p>
-                    <h2>What day did you arrive?</h2>
+                    <h2>When did you arrive?</h2>
+                    <p className="live-step-help">Your birth date establishes the planetary pattern you were born under.</p>
                     <div className="live-three-col">
                       <label className="demo-field live-field">
                         <span>Month</span>
@@ -1325,7 +1409,10 @@ export function LiveExperience() {
                 {signupStep === "birthTime" ? (
                   <section className="live-intake-step">
                     <p className="reading-kicker">Birth time</p>
-                    <h2>What time should we use?</h2>
+                    <h2>About what time?</h2>
+                    <p className="live-step-help">
+                      Your birth time helps calculate your Rising sign and the houses of your chart.
+                    </p>
                     <div className="live-three-col">
                       <label className="demo-field live-field">
                         <span>Hour</span>
@@ -1369,13 +1456,17 @@ export function LiveExperience() {
                       />
                       I don&apos;t know my exact birth time.
                     </label>
+                    <p className="live-step-note">You can continue without it, but some chart details will be less precise.</p>
                   </section>
                 ) : null}
 
                 {signupStep === "birthPlace" ? (
                   <section className="live-intake-step">
                     <p className="reading-kicker">Birth place</p>
-                    <h2>Where were you born?</h2>
+                    <h2>Where did your story begin?</h2>
+                    <p className="live-step-help">
+                      Your birthplace supplies the coordinates and time zone needed to calculate your chart accurately.
+                    </p>
                     <label className="demo-field live-field">
                       <span>City, state, or country</span>
                       <input
@@ -1432,6 +1523,9 @@ export function LiveExperience() {
                   <section className="live-intake-step">
                     <p className="reading-kicker">Review</p>
                     <h2>Ready to open your CosmoScope.</h2>
+                    <p className="live-step-help">
+                      Check these details carefully. Small differences in time or place can change parts of your chart.
+                    </p>
                     <div className="live-review-list">
                       <div>
                         <span>Name</span>
@@ -1503,7 +1597,7 @@ export function LiveExperience() {
                 ) : null}
                 <button className="button-primary" type="submit">
                   {signupStep === "welcome"
-                    ? "Begin my reading"
+                    ? "Build my CosmoScope"
                     : signupStep === "review"
                       ? "Open my CosmoScope"
                       : "Continue"}
@@ -1522,7 +1616,7 @@ export function LiveExperience() {
         <section className="demo-screen demo-loading fade-up" aria-live="polite">
           <p className="caption">Preparing your file</p>
           <h1 className="demo-loading-text">Calculating your chart and current climate</h1>
-          <p className="demo-body">We are building the account, caching the chart, and opening your member reading.</p>
+          <p className="demo-body">We are preparing your chart, reading today’s sky, and opening your private brief.</p>
         </section>
       ) : null}
 
@@ -1536,151 +1630,123 @@ export function LiveExperience() {
                 <span>Your life, decoded.</span>
               </h1>
               <button className="live-upgrade-button" type="button" onClick={() => void beginCheckout("annual_pass")}>
-                {entitlements?.premiumActive ? "Membership active" : "Upgrade to premium"}
+                {entitlements?.premiumActive ? "Membership active" : "Unlock This Week + Beyond"}
               </button>
             </div>
           </div>
 
           <div className="live-dashboard-grid">
-            <section className="live-editorial-panel live-editorial-panel-wide">
-              <div className="live-tab-row" role="tablist" aria-label="Forecast timeframes">
-                {forecastTabs.map((timeframe) => (
-                  <button
-                    key={timeframe}
-                    className={activeForecast === timeframe ? "is-active" : ""}
-                    type="button"
-                    onClick={() => void loadForecast(timeframe)}
-                  >
-                    {forecastLabels[timeframe]}
-                  </button>
-                ))}
-              </div>
+            <div className="live-tab-row live-editorial-panel-wide" role="tablist" aria-label="Forecast timeframes">
+              {forecastTabs.map((timeframe) => (
+                <button
+                  key={timeframe}
+                  className={activeForecast === timeframe ? "is-active" : ""}
+                  type="button"
+                  onClick={() => void loadForecast(timeframe)}
+                >
+                  {forecastLabels[timeframe]}
+                </button>
+              ))}
+            </div>
 
-              <div className="live-forecast-head">
-                <h2>{forecastLabels[activeForecast]}</h2>
-                <p>{formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}</p>
-              </div>
-
-              <div className="live-forecast-copy">
-                {activeForecastLocked && activeForecastProduct && activeForecastProductKey ? (
-                  <div className="live-locked-panel">
-                    <p className="reading-kicker">Premium reading</p>
-                    <h3>{activeForecastLockTitle}</h3>
-                    <p>{activeForecastLockCopy}</p>
-                    <button className="button-primary" type="button" onClick={() => void beginCheckout(activeForecastProductKey)}>
-                      Unlock {activeForecastProduct.title} — {activeForecastProduct.priceLabel}
-                    </button>
+            {activeForecast === "daily" && !activeForecastLocked ? (
+              <TodaysBriefPanel
+                effectiveLabel={formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}
+                headline={dailyBrief.headline}
+                learnYourSky={dailyBrief.learnYourSky}
+                move={dailyBrief.yourMove}
+                noticeWhen={dailyBrief.noticeWhen}
+                whyTodayFeelsThisWay={dailyBrief.whyTodayFeelsThisWay}
+              />
+            ) : (
+              <section className="live-editorial-panel live-editorial-panel-wide">
+                <div className="live-forecast-head">
+                  <div className="live-forecast-title-block">
+                    <p className="reading-kicker">Briefing</p>
+                    <h2>{forecastLabels[activeForecast]}</h2>
                   </div>
-                ) : null}
+                  <p>{formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}</p>
+                </div>
 
-                {!activeForecastLocked && activeForecast === "daily" ? (
-                  forecastParagraphs.length ? (
+                <div className="live-forecast-copy">
+                  {activeForecastLocked && activeForecastProduct && activeForecastProductKey ? (
+                    <div className="live-locked-panel">
+                      <p className="reading-kicker">Premium reading</p>
+                      <h3>{activeForecastLockTitle}</h3>
+                      <p>{activeForecastLockCopy}</p>
+                      <button className="button-primary" type="button" onClick={() => void beginCheckout(activeForecastProductKey)}>
+                        Unlock {activeForecastProduct.title} — {activeForecastProduct.priceLabel}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {!activeForecastLocked && activeForecast === "weekly" ? (
+                    forecastParagraphs.length ? (
+                      <>
+                        {forecastParagraphs.map((paragraph, index) => (
+                          <p key={`weekly-live-${index}`}>{renderMove(paragraph)}</p>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <p>{weeklySupport.opening}</p>
+                        <p>{weeklySupport.middle}</p>
+                        <p>{weeklySupport.closing}</p>
+                        <div className="live-timeline-list">
+                          {weeklySupport.themes.map(([day, theme]) => (
+                            <div key={day} className="live-timeline-item">
+                              <strong>{day}</strong>
+                              <p>{theme}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )
+                  ) : null}
+                  {!activeForecastLocked && activeForecast === "monthly" ? (
                     <>
-                      {forecastParagraphs.map((paragraph, index) => (
-                        <p key={`daily-live-${index}`}>{renderMove(paragraph)}</p>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <p>
-                        {dailyReading.primary ||
-                          "Your live daily decoding is still loading. This space should show the Reading Engine output once the forecast response returns."}
-                      </p>
-                      <p>{dailyReading.secondary}</p>
-                    </>
-                  )
-                ) : null}
-                {!activeForecastLocked && activeForecast === "weekly" ? (
-                  forecastParagraphs.length ? (
-                    <>
-                      {forecastParagraphs.map((paragraph, index) => (
-                        <p key={`weekly-live-${index}`}>{renderMove(paragraph)}</p>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <p>{weeklySupport.opening}</p>
-                      <p>{weeklySupport.middle}</p>
-                      <p>{weeklySupport.closing}</p>
-                      <div className="live-timeline-list">
-                        {weeklySupport.themes.map(([day, theme]) => (
-                          <div key={day} className="live-timeline-item">
-                            <strong>{day}</strong>
-                            <p>{theme}</p>
-                          </div>
+                      <div className="live-longform-section">
+                        <p className="reading-kicker">The overarching narrative</p>
+                        {(monthlyNarrative.length ? monthlyNarrative : forecastParagraphs).map((paragraph, index) => (
+                          <p key={`monthly-${index}`}>{paragraph}</p>
                         ))}
                       </div>
-                    </>
-                  )
-                ) : null}
-                {!activeForecastLocked && activeForecast === "monthly" ? (
-                  <>
-                    <div className="live-longform-section">
-                      <p className="reading-kicker">The overarching narrative</p>
-                      {(monthlyNarrative.length ? monthlyNarrative : forecastParagraphs).map((paragraph, index) => (
-                        <p key={`monthly-${index}`}>{paragraph}</p>
-                      ))}
-                    </div>
-                    <div className="live-longform-section">
-                      <p className="reading-kicker">Retrogrades and stations</p>
-                      <div className="live-callout-stack">
-                        <div className="live-callout-card">
-                          <p className="reading-kicker">Timing note</p>
-                          <p>
-                            The month asks for fewer reactive commitments and more attention to what is quietly shifting underneath the surface.
-                          </p>
-                        </div>
-                        {transitSignal ? (
+                      <div className="live-longform-section">
+                        <p className="reading-kicker">Retrogrades and stations</p>
+                        <div className="live-callout-stack">
                           <div className="live-callout-card">
-                            <p className="reading-kicker">{transitSignal.transitBody} against {transitSignal.natalBody}</p>
+                            <p className="reading-kicker">Timing note</p>
                             <p>
-                              This pattern can make growth feel urgent and control feel justified. The better use of it is strategic pacing, not overreach.
+                              The month asks for fewer reactive commitments and more attention to what is quietly shifting underneath the surface.
                             </p>
                           </div>
-                        ) : null}
+                          {transitSignal ? (
+                            <div className="live-callout-card">
+                              <p className="reading-kicker">{transitSignal.transitBody} against {transitSignal.natalBody}</p>
+                              <p>
+                                This pattern can make growth feel urgent and control feel justified. The better use of it is strategic pacing, not overreach.
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  </>
-                ) : null}
-                {!activeForecastLocked && activeForecast === "yearly" ? (
-                  forecastParagraphs.length ? (
-                    forecastParagraphs.map((paragraph, index) => <p key={`${activeForecast}-${index}`}>{renderMove(paragraph)}</p>)
-                  ) : (
-                    <p>Choose a timeframe to load the reading.</p>
-                  )
-                ) : null}
-              </div>
-
-              {transitSignal && activeForecast === "daily" ? (
-                <div className="live-callout-card live-daily-move">
-                  <p className="reading-kicker">Your move</p>
-                  <p>
-                    {moveText ||
-                      "Expect stronger reactions where confidence and control overlap. The cleanest move today is to pace decisions instead of forcing certainty too early."}
-                  </p>
+                    </>
+                  ) : null}
+                  {!activeForecastLocked && activeForecast === "yearly" ? (
+                    forecastParagraphs.length ? (
+                      forecastParagraphs.map((paragraph, index) => <p key={`${activeForecast}-${index}`}>{renderMove(paragraph)}</p>)
+                    ) : (
+                      <p>Choose a timeframe to load the reading.</p>
+                    )
+                  ) : null}
                 </div>
-              ) : null}
-            </section>
+              </section>
+            )}
 
-            <section className="live-big-three live-editorial-panel-wide">
-              <div className="live-section-label">
-                <span />
-                <p>Your core placements</p>
-                <span />
-              </div>
-              <p className="live-bridge-copy">
-                These three placements show how you move through the world, how you process experience, and how other people read you before much is said. Read them together, because this is where the chart becomes personal instead of theoretical.
-              </p>
-              <div className="live-coordinate-grid">
-                {bigThreeCards.map((item) => (
-                  <article key={item.kicker} className="live-coordinate-card">
-                    <p className="reading-kicker">{item.kicker}</p>
-                    <h2>{item.headline}</h2>
-                    <p>{item.content}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
+            <UnderstandWhySection
+              copy="These placements explain how you move through the world, how you process experience, and how other people read you before much is said."
+              placements={bigThreeCards}
+            />
 
             <section className="live-editorial-panel">
               <p className="reading-kicker">The wider atmosphere</p>
@@ -1691,12 +1757,12 @@ export function LiveExperience() {
 
             <section className="live-editorial-panel live-architecture-panel">
               <div className="live-panel-topline">
-                <p className="reading-kicker">Your cosmic architecture</p>
+                <p className="reading-kicker">Your chart pattern</p>
               </div>
               {chartSummaryParagraphs.length ? (
                 chartSummaryParagraphs.map((paragraph, index) => <p key={`summary-${index}`}>{renderMove(paragraph)}</p>)
               ) : (
-                <p>Your chart summary will appear here once the calculation is complete.</p>
+                <p>Your chart summary is being prepared.</p>
               )}
               <div className="live-metadata-footer">
                 <div>
@@ -1711,7 +1777,7 @@ export function LiveExperience() {
             </section>
 
             <section className="live-blueprint-panel live-editorial-panel-wide">
-              <p className="reading-kicker">Premium publication</p>
+              <p className="reading-kicker">Long view</p>
               <h2>The 2026 Yearly Blueprint</h2>
               <p>
                 A long-form reading that maps the year&apos;s major turning points against your exact chart, so your bigger decisions have a stronger frame around them.
@@ -1746,27 +1812,36 @@ export function LiveExperience() {
                 </button>
               </div>
             </section>
+
+            <section className="live-editorial-panel live-editorial-panel-wide live-account-panel">
+              <div className="live-panel-topline">
+                <p className="reading-kicker">Account</p>
+                <p className="live-inline-metadata">Signed in on this device</p>
+              </div>
+              <h2>Manage this session.</h2>
+              <p>Sign out clears this browser session. Delete account permanently removes this CosmoScope account.</p>
+              <div className="live-account-actions">
+                <button className="button-secondary" type="button" onClick={handleSignOut}>
+                  Sign out
+                </button>
+                <button
+                  className="live-danger-button"
+                  disabled={isDeletingAccount}
+                  type="button"
+                  onClick={() => void handleDeleteAccount()}
+                >
+                  {isDeletingAccount ? "Deleting..." : "Delete account"}
+                </button>
+              </div>
+            </section>
           </div>
 
           {toolStatus ? <p className="live-subtle">{toolStatus}</p> : null}
           {error ? <p className="live-error">{error}</p> : null}
 
           <div className="demo-footer-actions">
-            <button
-              className="button-secondary"
-              type="button"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
-                }
-                setAccessToken(null);
-                setChart(null);
-                setEntitlements(null);
-                setForecasts({});
-                setPhase("auth");
-              }}
-            >
-              Change account
+            <button className="button-secondary" type="button" onClick={handleSignOut}>
+              Sign out
             </button>
             <a className="button-primary" href="/">
               Return to overview
@@ -1785,7 +1860,7 @@ function authHeaders(accessToken: string) {
 }
 
 async function request<T>(path: string, init: RequestInit) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${resolveCosmoScopeApiBaseUrl()}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",

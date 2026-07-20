@@ -3,11 +3,15 @@
   "private": true,
   "packageManager": "pnpm@11.7.0",
   "scripts": {
+    "test:beta-hardening": "node --experimental-strip-types scripts/beta-hardening-tests.mjs",
     "typecheck": "pnpm -r run typecheck"
   },
   "workspaces": [
     "apps/*",
     "packages/*",
     "worker"
-  ]
+  ],
+  "devDependencies": {
+    "wrangler": "^4.105.0"
+  }
 }

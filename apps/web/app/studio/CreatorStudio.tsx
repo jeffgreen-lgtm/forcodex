@@ -8,9 +8,7 @@ import {
   type StudioReadingResult,
   type StudioReadingType
 } from "@cosmoscope/api/contracts";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_COSMOSCOPE_API_BASE_URL?.trim() || "https://cosmoscope-api.jeff-green-5aa.workers.dev";
+import { resolveCosmoScopeApiBaseUrl } from "../lib/apiBaseUrl";
 
 const readingTypes: Array<{ label: string; value: StudioReadingType }> = [
   { label: "Daily", value: "daily" },
@@ -35,7 +33,7 @@ const audiences: Array<{ label: string; value: StudioAudience }> = [
 ];
 
 async function requestStudio(body: Record<string, unknown>) {
-  const response = await fetch(`${API_BASE_URL}${API_PATHS.studioRead}`, {
+  const response = await fetch(`${resolveCosmoScopeApiBaseUrl()}${API_PATHS.studioRead}`, {
     body: JSON.stringify(body),
     headers: {
       "content-type": "application/json"

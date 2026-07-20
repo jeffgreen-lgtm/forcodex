@@ -3,9 +3,7 @@
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { API_PATHS } from "@cosmoscope/api";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_COSMOSCOPE_API_BASE_URL?.trim() || "https://cosmoscope-api.jeff-green-5aa.workers.dev";
+import { resolveCosmoScopeApiBaseUrl } from "../lib/apiBaseUrl";
 
 function readRecoveryToken() {
   if (typeof window === "undefined") {
@@ -25,7 +23,7 @@ function readRecoveryToken() {
 }
 
 async function request<T>(path: string, init: RequestInit) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${resolveCosmoScopeApiBaseUrl()}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",

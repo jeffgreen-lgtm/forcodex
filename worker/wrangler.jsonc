@@ -12,6 +12,7 @@
     "APP_ENV": "production",
     "APP_URL": "https://cosmo.greenhenncollective.com",
     "ENABLE_AI_READINGS": "false",
+    "ENABLE_PAID_AI_SMOKE": "false",
     "PAYMENTS_DISABLED_PREVIEW": "false",
     "READING_ENGINE_VERSION": "v1",
     "SUPABASE_URL": "https://yjfnorcmbqciysacgyar.supabase.co"
