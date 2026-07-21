@@ -135,6 +135,12 @@ const forecastLabels: Record<ForecastTimeframe, string> = {
   monthly: "This Month",
   yearly: "This Year"
 };
+const forecastTabLabels: Record<ForecastTimeframe, string> = {
+  daily: "Today",
+  weekly: "Week",
+  monthly: "Month",
+  yearly: "Year"
+};
 
 const placementKickers = ["Sun sign", "Moon sign", "Rising sign"] as const;
 const signQualities: Record<
@@ -340,15 +346,6 @@ function buildChartPlacements(chart: ChartResponse | null): ChartPlacementSummar
       sign: chart?.chart?.bigThree?.rising ?? rising?.sign ?? "Pending"
     }
   ];
-}
-
-function buildChartSummaryLine(placements: ChartPlacementSummary[]) {
-  const signs = placements.map((placement) => placement.sign).filter((sign) => sign && sign !== "Pending");
-  if (signs.length < 3) {
-    return "Your chart summary will sharpen once the full chart calculation is available.";
-  }
-
-  return `You’re working with ${signs[0]} drive, ${signs[1]} emotional timing, and ${signs[2]} presentation. Read together, they show how you choose, react, and enter the room.`;
 }
 
 function placementIcon(body: ChartPlacementSummary["body"]) {
@@ -573,6 +570,7 @@ export function LiveExperience() {
   const firstName = useMemo(() => {
     return memberLabel.split(/\s+/)[0] || "Member";
   }, [memberLabel]);
+  const readingForName = firstName || memberLabel || "Member";
 
   const signupStepIndex = signupSteps.indexOf(signupStep);
   useEffect(() => {
@@ -1055,9 +1053,13 @@ export function LiveExperience() {
         headers: authHeaders(accessToken),
         method: "POST"
       });
-      window.location.href = response.url;
+      if (!response.url) {
+        throw new Error("Checkout could not open. Please try again in a moment.");
+      }
+      setToolStatus(null);
+      window.location.assign(response.url);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to start checkout.");
+      setError(caught instanceof Error ? caught.message : "Checkout could not open. Please try again in a moment.");
       setToolStatus(null);
     }
   }
@@ -1187,7 +1189,6 @@ export function LiveExperience() {
   const forecastTabs: ForecastTimeframe[] = ["daily", "weekly", "monthly", "yearly"];
   const activeForecastCopy = forecasts[activeForecast];
   const chartPlacements = buildChartPlacements(chart);
-  const chartSummaryLine = buildChartSummaryLine(chartPlacements);
   const cleanedForecastContent = sanitizeUserFacingCopy(activeForecastCopy?.content, memberLabel);
   const forecastBody = cleanedForecastContent;
   const forecastParagraphs = splitParagraphs(forecastBody);
@@ -1587,12 +1588,20 @@ export function LiveExperience() {
               <strong>CosmoScope</strong>
             </a>
             <div className="live-dashboard-header-actions">
-              <span className="live-profile-chip" aria-label={`Signed in as ${memberLabel}`}>
-                {firstName.slice(0, 1).toUpperCase()}
-              </span>
-              <button className="live-menu-button" type="button" onClick={handleSignOut}>
-                Sign out
-              </button>
+              <details className="live-account-menu">
+                <summary aria-label={`Account menu for ${readingForName}`}>
+                  <span className="live-profile-chip" aria-hidden="true">
+                    {readingForName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="live-account-menu-name">{readingForName}</span>
+                </summary>
+                <div className="live-account-menu-panel">
+                  <p>Signed in as {readingForName}</p>
+                  <button type="button" onClick={handleSignOut}>
+                    Sign out
+                  </button>
+                </div>
+              </details>
             </div>
           </header>
 
@@ -1609,7 +1618,7 @@ export function LiveExperience() {
                   type="button"
                   onClick={() => void loadForecast(timeframe)}
                 >
-                  <span>{forecastLabels[timeframe]}</span>
+                  <span>{forecastTabLabels[timeframe]}</span>
                   {isYearly ? <em>Coming Soon</em> : null}
                 </button>
               );
@@ -1687,11 +1696,20 @@ export function LiveExperience() {
                     </div>
                   ))}
                 </div>
-                <p>{chartSummaryLine}</p>
                 <button className="live-inline-link" type="button" onClick={() => setShowFullChart((value) => !value)}>
                   {showFullChart ? "Hide full chart" : "View full chart"}
                   <span aria-hidden="true">→</span>
                 </button>
+                <div className="live-metadata-footer live-metadata-footer--compact">
+                  <div>
+                    <span>Calculated origin</span>
+                    <strong>{chart?.chart?.birth?.place ?? "Birth place pending"}</strong>
+                  </div>
+                  <div>
+                    <span>Reading for</span>
+                    <strong>{readingForName}</strong>
+                  </div>
+                </div>
               </div>
               <div className="live-chart-wheel-wrap">
                 <MiniChartWheel placements={chartPlacements} />
@@ -1703,16 +1721,6 @@ export function LiveExperience() {
                   ) : (
                     <p>Your chart summary will sharpen as the calculation finishes.</p>
                   )}
-                  <div className="live-metadata-footer">
-                    <div>
-                      <span>Calculated origin</span>
-                      <strong>{chart?.chart?.birth?.place ?? "Birth place pending"}</strong>
-                    </div>
-                    <div>
-                      <span>Reading for</span>
-                      <strong>{memberLabel}</strong>
-                    </div>
-                  </div>
                 </div>
               ) : null}
             </section>
@@ -1768,11 +1776,8 @@ export function LiveExperience() {
 
               <section className="live-account-panel">
                 <p className="reading-kicker">Account</p>
-                <p>Sign out clears this browser session. Delete account permanently removes this CosmoScope account.</p>
+                <p>Delete account permanently removes this CosmoScope account.</p>
                 <div className="live-account-actions">
-                  <button className="button-secondary" type="button" onClick={handleSignOut}>
-                    Sign out
-                  </button>
                   <button
                     className="live-danger-button"
                     disabled={isDeletingAccount}

@@ -116,4 +116,12 @@ withEnv("NEXT_PUBLIC_COSMOSCOPE_API_BASE_URL", "https://api.example.com/", () =>
   });
 });
 
+{
+  const workerSource = readFileSync(resolve(rootDir, "worker/src/index.ts"), "utf8");
+  assert.match(workerSource, /conjunction:\s*"conjunct"/);
+  assert.match(workerSource, /opposition:\s*"opposite"/);
+  assert.doesNotMatch(workerSource, /is \$\{aspect\} your natal/);
+  assert.doesNotMatch(workerSource, /The astrological picture today is unusually clear/);
+}
+
 console.log("Beta hardening tests passed.");

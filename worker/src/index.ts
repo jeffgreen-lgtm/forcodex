@@ -1412,7 +1412,7 @@ function buildInterpretationPacket(input: ReadingEngineGenerationInput): Interpr
 }
 
 function buildTransitSignalName(signal: TransitSignal) {
-  return `${signal.transitBody} ${normalizeTransitAspect(signal.aspect)} ${signal.natalBody}`;
+  return `${signal.transitBody} ${transitAspectPhrase(signal.aspect)} ${signal.natalBody}`;
 }
 
 function buildTransitSignalFocus(signal: TransitSignal) {
@@ -1422,7 +1422,7 @@ function buildTransitSignalFocus(signal: TransitSignal) {
 function buildTransitSignalEvidence(signal: TransitSignal) {
   const evidence = [
     `${signal.transitBody} in ${signal.transitSign}`,
-    `${normalizeTransitAspect(signal.aspect)} natal ${signal.natalBody}`
+    `${transitAspectPhrase(signal.aspect)} natal ${signal.natalBody}`
   ];
 
   if (signal.natalSign) {
@@ -1567,7 +1567,7 @@ function deriveEditorialBriefTone(confidence: InterpretationPacketConfidence): E
 function buildEditorialBriefConfidenceLanguage(confidence: InterpretationPacketConfidence) {
   switch (confidence) {
     case "high":
-      return "The astrological picture today is unusually clear.";
+      return "Today's pattern may be easier to notice than usual.";
     case "medium":
       return "The pattern is clear enough to read directly without overstating it.";
     case "low":
@@ -1655,7 +1655,7 @@ function buildDefaultDailySignals(input: ReadingEngineGenerationInput) {
   });
 
   const dominantTransitSummary = input.chart?.dominantTransit
-    ? `${input.chart.dominantTransit.transitBody} ${normalizeTransitAspect(input.chart.dominantTransit.aspect)} ${input.chart.dominantTransit.natalBody}`
+    ? `${input.chart.dominantTransit.transitBody} ${transitAspectPhrase(input.chart.dominantTransit.aspect)} ${input.chart.dominantTransit.natalBody}`
     : "current sky";
 
   return [sun.label, moon.label, rising.label, dominantTransitSummary].filter(Boolean);
@@ -2575,7 +2575,7 @@ function createMockAiReadingProvider(): AiReadingProvider {
       });
       const signal = input.chart?.dominantTransit;
       const pressure = signal
-        ? `${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody}`
+        ? `${signal.transitBody} in ${signal.transitSign} ${transitAspectPhrase(signal.aspect)} your natal ${signal.natalBody}`
         : "the current sky asking for cleaner timing";
       const dateLabel = buildReadingEngineV2DateLabel(input.timeframe, input.effectiveDate);
 
@@ -2593,8 +2593,8 @@ function createMockAiReadingProvider(): AiReadingProvider {
           ],
           yourMove: "Pause for one full minute before sending your next important message, then cut one unnecessary sentence.",
           whyTodayFeelsThisWay: [
-            `${capitalizeFirst(sun.label)} keeps your attention moving toward what feels most important, while ${capitalizeFirst(moon.label)} affects how quickly the moment starts feeling personal.`,
-            `${capitalizeFirst(rising.label)} shapes the tone other people meet first. ${signal ? `${signal.transitBody} in ${signal.transitSign} adds extra emphasis around timing and delivery, so careful wording does more for you than fast wording.` : "The current sky puts extra value on timing, so a slower response may be the stronger response."}`,
+            `${buildRelevantNatalContext(input, { moon, rising, sun })} Today works better when the reading stays focused on the placement the current transit is touching most directly.`,
+            `${signal ? `${signal.transitBody} in ${signal.transitSign} adds extra emphasis around timing and delivery, so careful wording does more for you than fast wording.` : "The current sky puts extra value on timing, so a slower response may be the stronger response."}`,
             "None of this predicts the day for you. It simply shows where steadier pacing can keep ordinary friction from growing into something larger."
           ],
           learnYourSky: "Your Rising sign affects first impressions, while the day’s transit layer changes how quickly conversations heat up or settle down."
@@ -3658,13 +3658,12 @@ function buildForecastCopy(input: ReadingEngineGenerationInput) {
   const headline = buildFallbackHeadline(input.timeframe);
   const yourMove = buildFallbackYourMove(input.timeframe, brief);
   const transitContext = buildFallbackTransitContext(input, brief);
-  const chartContext = `${capitalizeFirst(sun.label)} describes how you choose what deserves effort. ${capitalizeFirst(moon.label)} describes what helps you settle before you react. ${capitalizeFirst(rising.label)} describes the tone people meet before you explain yourself.`;
 
   if (input.timeframe === "daily") {
     const noticeWhen = buildFallbackNoticeWhen("daily");
     const whyToday = [
       `${firstName}, today is easier to work with when you treat timing as useful information, not as a demand to rush. ${transitContext}`,
-      `${chartContext} Read those placements together so the day feels specific instead of theoretical.`,
+      `${buildRelevantNatalContext(input, { moon, rising, sun })} Read that placement as context, not as a fixed outcome.`,
       brief?.confidenceLanguage ?? "The available astrological picture is modest, so the reading stays focused on what can be used today."
     ];
     const learnYourSky =
@@ -3772,8 +3771,41 @@ function buildFallbackTransitContext(input: ReadingEngineGenerationInput, brief:
     return brief?.confidenceLanguage ?? "The current sky does not point to one dominant transit, so the reading stays modest and practical.";
   }
 
-  const aspect = normalizeTransitAspect(signal.aspect).toLowerCase();
-  return `${signal.transitBody} in ${signal.transitSign} is ${aspect} your natal ${signal.natalBody}, which makes timing, attention, and response worth handling with more care.`;
+  return `${signal.transitBody} in ${signal.transitSign} is ${transitAspectPhrase(signal.aspect)} your natal ${signal.natalBody}, which makes timing, attention, and response worth handling with more care.`;
+}
+
+function buildRelevantNatalContext(
+  input: ReadingEngineGenerationInput,
+  placements: { moon: ReadingEnginePlacementDescriptor; rising: ReadingEnginePlacementDescriptor; sun: ReadingEnginePlacementDescriptor }
+) {
+  const natalBody = input.chart?.dominantTransit?.natalBody?.toLowerCase() ?? "";
+  if (natalBody.includes("moon")) {
+    return `${capitalizeFirst(placements.moon.label)} helps explain what settles you before a reaction becomes a decision.`;
+  }
+  if (natalBody.includes("ascendant") || natalBody.includes("rising")) {
+    return `${capitalizeFirst(placements.rising.label)} helps explain how the day is read through your presence before much is said.`;
+  }
+  if (natalBody.includes("sun")) {
+    return `${capitalizeFirst(placements.sun.label)} helps explain where attention, effort, and identity can feel more personal today.`;
+  }
+  return "The current transit is touching a specific natal point, so the useful question is where timing asks for more care.";
+}
+
+function transitAspectPhrase(value: string) {
+  const normalized = normalizeTransitAspect(value).toLowerCase();
+  const phrases: Record<string, string> = {
+    conjunct: "conjunct",
+    conjunction: "conjunct",
+    opposite: "opposite",
+    opposition: "opposite",
+    square: "square",
+    trine: "trine",
+    sextile: "sextile",
+    quincunx: "quincunx",
+    inconjunct: "quincunx"
+  };
+
+  return phrases[normalized] ?? normalized;
 }
 
 function sentenceCase(value: string) {
