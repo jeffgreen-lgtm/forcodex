@@ -4,7 +4,8 @@ export type ProductKey =
   | "lovescope_unlock"
   | "starscope_unlock"
   | "forecast_monthly"
-  | "yearly_blueprint";
+  | "yearly_blueprint"
+  | "tip_jar";
 
 export type ProductKind = "subscription" | "one_time_unlock";
 

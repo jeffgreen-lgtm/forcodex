@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { API_PATHS } from "@cosmoscope/api";
-import { PREMIUM_PRODUCTS } from "@cosmoscope/api/products";
-import { UnderstandWhySection, TodaysBriefPanel } from "../components/TodaysBriefSections";
+import { API_PATHS, type ProductKey } from "@cosmoscope/api";
 import { resolveTodaysBriefData, type StructuredDailyBrief } from "../components/todaysBriefData";
 import { resolveCosmoScopeApiBaseUrl } from "../lib/apiBaseUrl";
 
@@ -135,6 +133,12 @@ type CheckoutSessionResponse = {
 };
 
 type ResolvedBirthLocation = Pick<GeocodeResult, "label" | "latitude" | "longitude" | "timezone">;
+
+type ChartPlacementSummary = {
+  body: "Sun" | "Moon" | "Rising";
+  degreeLabel: string;
+  sign: string;
+};
 
 const SESSION_STORAGE_KEY = "cosmoscope-access-token";
 const signupSteps: SignupStep[] = ["welcome", "name", "account", "birthDate", "birthTime", "birthPlace", "review"];
@@ -314,6 +318,98 @@ function buildCoordinateMeaning(kicker: (typeof placementKickers)[number], sign:
   return `${sign} describes the outer style of your chart: how you enter a room, how other people read you at first contact, and what your presence communicates before much is said. In real life, that often comes through as ${qualities.publicStyle}. Your Rising sign does not replace who you are; it shows the doorway through which the rest of the chart first gets seen.`;
 }
 
+function formatDegree(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return `${Math.round(value)}°`;
+}
+
+function findPlanetPlacement(planets: Placement[], body: "Sun" | "Moon") {
+  return planets.find((placement) => placement.body.toLowerCase() === body.toLowerCase());
+}
+
+function buildChartPlacements(chart: ChartResponse | null): ChartPlacementSummary[] {
+  const planets = chart?.chart?.planets ?? [];
+  const sun = findPlanetPlacement(planets, "Sun");
+  const moon = findPlanetPlacement(planets, "Moon");
+  const rising = chart?.chart?.wheel?.ascendant ?? null;
+
+  return [
+    {
+      body: "Sun",
+      degreeLabel: formatDegree(sun?.degreeInSign),
+      sign: chart?.chart?.bigThree?.sun ?? sun?.sign ?? "Pending"
+    },
+    {
+      body: "Moon",
+      degreeLabel: formatDegree(moon?.degreeInSign),
+      sign: chart?.chart?.bigThree?.moon ?? moon?.sign ?? "Pending"
+    },
+    {
+      body: "Rising",
+      degreeLabel: formatDegree(rising?.degreeInSign),
+      sign: chart?.chart?.bigThree?.rising ?? rising?.sign ?? "Pending"
+    }
+  ];
+}
+
+function buildChartSummaryLine(placements: ChartPlacementSummary[]) {
+  const signs = placements.map((placement) => placement.sign).filter((sign) => sign && sign !== "Pending");
+  if (signs.length < 3) {
+    return "Your chart summary will sharpen once the full chart calculation is available.";
+  }
+
+  return `You’re working with ${signs[0]} drive, ${signs[1]} emotional timing, and ${signs[2]} presentation. Read together, they show how you choose, react, and enter the room.`;
+}
+
+function placementIcon(body: ChartPlacementSummary["body"]) {
+  if (body === "Moon") {
+    return "☾";
+  }
+  if (body === "Rising") {
+    return "♒";
+  }
+  return "☉";
+}
+
+function MiniChartWheel({ placements }: { placements: ChartPlacementSummary[] }) {
+  return (
+    <svg className="live-chart-wheel" viewBox="0 0 220 220" role="img" aria-label="Compact natal chart wheel">
+      <circle className="live-wheel-ring live-wheel-ring-outer" cx="110" cy="110" r="96" />
+      <circle className="live-wheel-ring" cx="110" cy="110" r="72" />
+      <circle className="live-wheel-ring live-wheel-ring-inner" cx="110" cy="110" r="36" />
+      {Array.from({ length: 12 }).map((_, index) => {
+        const angle = (index / 12) * Math.PI * 2 - Math.PI / 2;
+        const x1 = 110 + Math.cos(angle) * 72;
+        const y1 = 110 + Math.sin(angle) * 72;
+        const x2 = 110 + Math.cos(angle) * 96;
+        const y2 = 110 + Math.sin(angle) * 96;
+        return <line key={index} className="live-wheel-spoke" x1={x1} x2={x2} y1={y1} y2={y2} />;
+      })}
+      <polyline
+        className="live-wheel-aspect live-wheel-aspect-gold"
+        points="110,34 174,142 52,86 168,78 80,176 110,34"
+      />
+      <polyline className="live-wheel-aspect live-wheel-aspect-teal" points="52,86 110,186 188,110 52,86" />
+      {placements.map((placement, index) => {
+        const angle = (index / placements.length) * Math.PI * 2 - Math.PI / 2;
+        const x = 110 + Math.cos(angle) * 82;
+        const y = 110 + Math.sin(angle) * 82;
+        return (
+          <g key={placement.body}>
+            <circle className="live-wheel-point" cx={x} cy={y} r="7" />
+            <text className="live-wheel-label" x={x} y={y + 4} textAnchor="middle">
+              {placement.body.slice(0, 1)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 function buildGlobalClimateReading(signal: TransitSignal | undefined) {
   if (!signal) {
     return {
@@ -487,6 +583,7 @@ export function LiveExperience() {
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [showFullChart, setShowFullChart] = useState(false);
 
   const memberLabel = useMemo(() => {
     return normalizeMemberLabel(displayName, email);
@@ -542,13 +639,16 @@ export function LiveExperience() {
 
     if (checkout === "success" && sessionId) {
       setToolStatus("Confirming payment...");
-      void request<{ entitlement: EntitlementsResponse }>(API_PATHS.confirmCheckoutSession, {
+      void request<{ entitlement: EntitlementsResponse; productKey: string }>(API_PATHS.confirmCheckoutSession, {
         body: JSON.stringify({ sessionId }),
         headers: authHeaders(accessToken),
         method: "POST"
       })
         .then((payload) => {
           setEntitlements(payload.entitlement);
+          if (payload.productKey === "tip_jar") {
+            setToolStatus("Thank you for supporting CosmoScope.");
+          }
           return hydrateMember(accessToken);
         })
         .then(() => {
@@ -556,7 +656,7 @@ export function LiveExperience() {
           cleanUrl.searchParams.delete("checkout");
           cleanUrl.searchParams.delete("session_id");
           window.history.replaceState({}, "", cleanUrl.toString());
-          setToolStatus("Payment confirmed.");
+          setToolStatus((current) => current ?? "Payment confirmed.");
         })
         .catch((caught) => {
           setError(caught instanceof Error ? caught.message : "We could not confirm the payment yet.");
@@ -624,6 +724,7 @@ export function LiveExperience() {
     setError(null);
     setToolStatus(message);
     setIsDeletingAccount(false);
+    setShowFullChart(false);
   }
 
   function handleSignOut() {
@@ -965,7 +1066,7 @@ export function LiveExperience() {
     }
   }
 
-  async function beginCheckout(productKey: keyof typeof PREMIUM_PRODUCTS) {
+  async function beginCheckout(productKey: ProductKey) {
     if (!accessToken) {
       setError("Create or open your account before starting checkout.");
       return;
@@ -986,38 +1087,6 @@ export function LiveExperience() {
     }
   }
 
-  function canAccessForecast(timeframe: ForecastTimeframe) {
-    if (timeframe === "daily" || timeframe === "weekly") {
-      return true;
-    }
-
-    if (entitlements?.premiumActive) {
-      return true;
-    }
-
-    if (timeframe === "monthly") {
-      return Boolean(entitlements?.unlocks.forecastMonthly);
-    }
-
-    if (timeframe === "yearly") {
-      return Boolean(entitlements?.unlocks.yearlyBlueprint);
-    }
-
-    return false;
-  }
-
-  function checkoutProductForForecast(timeframe: ForecastTimeframe): keyof typeof PREMIUM_PRODUCTS | null {
-    if (timeframe === "monthly") {
-      return "forecast_monthly";
-    }
-
-    if (timeframe === "yearly") {
-      return "yearly_blueprint";
-    }
-
-    return null;
-  }
-
   async function loadForecast(timeframe: ForecastTimeframe) {
     if (!accessToken) {
       return;
@@ -1026,8 +1095,8 @@ export function LiveExperience() {
     setActiveForecast(timeframe);
     setError(null);
 
-    if (!canAccessForecast(timeframe)) {
-      setToolStatus(null);
+    if (timeframe === "yearly") {
+      setToolStatus("The Yearly Blueprint is coming soon.");
       return;
     }
 
@@ -1189,35 +1258,15 @@ export function LiveExperience() {
 
   const forecastTabs: ForecastTimeframe[] = ["daily", "weekly", "monthly", "yearly"];
   const activeForecastCopy = forecasts[activeForecast];
-  const chartPlanets = chart?.chart?.planets ?? [];
-  const chartTransits = chart?.chart?.transits ?? [];
   const transitSignal = chart?.chart?.dominantTransit;
-  const chartBigThree = [chart?.chart?.bigThree?.sun, chart?.chart?.bigThree?.moon, chart?.chart?.bigThree?.rising]
-    .filter(Boolean)
-    .join(" • ");
-  const bigThreeCards = [
-    {
-      content: buildCoordinateMeaning(placementKickers[0], chart?.chart?.bigThree?.sun),
-      headline: chart?.chart?.bigThree?.sun ?? "Pending",
-      kicker: placementKickers[0]
-    },
-    {
-      content: buildCoordinateMeaning(placementKickers[1], chart?.chart?.bigThree?.moon),
-      headline: chart?.chart?.bigThree?.moon ?? "Pending",
-      kicker: placementKickers[1]
-    },
-    {
-      content: buildCoordinateMeaning(placementKickers[2], chart?.chart?.bigThree?.rising),
-      headline: chart?.chart?.bigThree?.rising ?? "Pending",
-      kicker: placementKickers[2]
-    }
-  ];
+  const chartPlacements = buildChartPlacements(chart);
+  const chartSummaryLine = buildChartSummaryLine(chartPlacements);
+  const chartBigThree = chartPlacements.map((placement) => placement.sign).filter((sign) => sign && sign !== "Pending").join(" • ");
   const cleanedForecastContent = sanitizeUserFacingCopy(activeForecastCopy?.content, memberLabel);
   const forecastBody = cleanedForecastContent;
   const forecastParagraphs = splitParagraphs(forecastBody);
   const cleanedChartSummary = sanitizeUserFacingCopy(chart?.summary, memberLabel);
   const chartSummaryParagraphs = splitParagraphs(cleanedChartSummary);
-  const blueprintPrice = PREMIUM_PRODUCTS.yearly_blueprint.priceLabel;
   const globalClimate = buildGlobalClimateReading(transitSignal);
   const weeklySupport = buildWeeklySupport(chartBigThree, transitSignal);
   const monthlyNarrative = chunkSentences(
@@ -1227,16 +1276,7 @@ export function LiveExperience() {
       .filter(Boolean),
     2
   );
-  const activeForecastProductKey = checkoutProductForForecast(activeForecast);
-  const activeForecastProduct = activeForecastProductKey ? PREMIUM_PRODUCTS[activeForecastProductKey] : null;
-  const activeForecastLocked = activeForecastProductKey ? !canAccessForecast(activeForecast) : false;
   const isActiveSignupIntake = mode === "signup" && signupStep !== "welcome";
-  const activeForecastLockTitle =
-    activeForecast === "monthly" ? "This Month is a premium reading." : "This Year is a premium publication.";
-  const activeForecastLockCopy =
-    activeForecast === "monthly"
-      ? "Unlock this month’s timing map for a clearer view of the patterns, pressure points, and better windows ahead."
-      : "Unlock the full long-form yearly reading so your bigger decisions have a stronger frame around them.";
   const dailyBrief = resolveTodaysBriefData({
     content: cleanedForecastContent,
     fallbackHeadline:
@@ -1245,6 +1285,23 @@ export function LiveExperience() {
       "A clearer daily reading will appear here once the latest forecast finishes loading.",
     structuredDailyBrief: activeForecastCopy?.structuredDailyBrief ?? null
   });
+  const dailyReadingParagraphs = dailyBrief.whyTodayFeelsThisWay.length ? dailyBrief.whyTodayFeelsThisWay : forecastParagraphs;
+  const monthlyFallback = [
+    "This month asks for clearer structure around the routines, conversations, and decisions that carry the most weight.",
+    "Use the larger pattern as a pacing guide. The goal is not to force certainty, but to notice which commitments deserve more care before they expand."
+  ];
+  const horizonParagraphs =
+    activeForecast === "weekly"
+      ? forecastParagraphs.length
+        ? forecastParagraphs
+        : [weeklySupport.opening, weeklySupport.middle, weeklySupport.closing]
+      : activeForecast === "monthly"
+        ? monthlyNarrative.length
+          ? monthlyNarrative
+          : forecastParagraphs.length
+            ? forecastParagraphs
+            : monthlyFallback
+        : [];
 
   return (
     <main className="live-shell">
@@ -1621,231 +1678,210 @@ export function LiveExperience() {
       ) : null}
 
       {phase === "member" ? (
-        <section className="live-member fade-up">
-          <div className="live-member-head">
-            <p className="timestamp">Private reading, built from your exact data.</p>
-            <div className="live-member-heading-row">
-              <h1 className="demo-hero">
-                <span>Your coordinates.</span>
-                <span>Your life, decoded.</span>
-              </h1>
-              <button className="live-upgrade-button" type="button" onClick={() => void beginCheckout("annual_pass")}>
-                {entitlements?.premiumActive ? "Membership active" : "Unlock This Week + Beyond"}
+        <section className="live-member live-member--dashboard fade-up">
+          <header className="live-dashboard-header">
+            <a className="live-dashboard-brand" href="/">
+              <span aria-hidden="true">✶</span>
+              <strong>CosmoScope</strong>
+            </a>
+            <div className="live-dashboard-header-actions">
+              <span className="live-profile-chip" aria-label={`Signed in as ${memberLabel}`}>
+                {firstName.slice(0, 1).toUpperCase()}
+              </span>
+              <button className="live-menu-button" type="button" onClick={handleSignOut}>
+                Sign out
               </button>
             </div>
-          </div>
+          </header>
 
-          <div className="live-dashboard-grid">
-            <div className="live-tab-row live-editorial-panel-wide" role="tablist" aria-label="Forecast timeframes">
-              {forecastTabs.map((timeframe) => (
+          <nav className="live-time-selector" role="tablist" aria-label="Reading time horizon">
+            {forecastTabs.map((timeframe) => {
+              const isYearly = timeframe === "yearly";
+              return (
                 <button
                   key={timeframe}
+                  aria-selected={activeForecast === timeframe}
                   className={activeForecast === timeframe ? "is-active" : ""}
+                  disabled={isYearly}
+                  role="tab"
                   type="button"
                   onClick={() => void loadForecast(timeframe)}
                 >
-                  {forecastLabels[timeframe]}
+                  <span>{forecastLabels[timeframe]}</span>
+                  {isYearly ? <em>Coming Soon</em> : null}
                 </button>
-              ))}
-            </div>
+              );
+            })}
+          </nav>
 
-            {activeForecast === "daily" && !activeForecastLocked ? (
-              <TodaysBriefPanel
-                effectiveLabel={formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}
-                headline={dailyBrief.headline}
-                learnYourSky={dailyBrief.learnYourSky}
-                move={dailyBrief.yourMove}
-                noticeWhen={dailyBrief.noticeWhen}
-                whyTodayFeelsThisWay={dailyBrief.whyTodayFeelsThisWay}
-              />
+          <div className="live-dashboard-content">
+            {activeForecast === "daily" ? (
+              <section className="live-primary-brief" aria-labelledby="today-brief-title">
+                <div className="live-primary-brief-copy">
+                  <p className="reading-kicker">{formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}</p>
+                  <h1 id="today-brief-title">{dailyBrief.headline}</h1>
+                  <div className="live-brief-paragraphs">
+                    {dailyReadingParagraphs.slice(0, 3).map((paragraph, index) => (
+                      <p key={`daily-brief-${index}`}>{renderMove(paragraph)}</p>
+                    ))}
+                  </div>
+                  <div className="live-consider-today">
+                    <span aria-hidden="true">✶</span>
+                    <div>
+                      <p className="reading-kicker">Consider today</p>
+                      <p>{dailyBrief.yourMove}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="live-primary-brief-art" aria-hidden="true" />
+              </section>
             ) : (
-              <section className="live-editorial-panel live-editorial-panel-wide">
-                <div className="live-forecast-head">
-                  <div className="live-forecast-title-block">
-                    <p className="reading-kicker">Briefing</p>
-                    <h2>{forecastLabels[activeForecast]}</h2>
+              <section className="live-horizon-reading" aria-labelledby="horizon-reading-title">
+                <div className="live-horizon-head">
+                  <div>
+                    <p className="reading-kicker">{activeForecast === "weekly" ? "Week ahead" : "Month ahead"}</p>
+                    <h1 id="horizon-reading-title">{forecastLabels[activeForecast]}</h1>
                   </div>
                   <p>{formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}</p>
                 </div>
-
-                <div className="live-forecast-copy">
-                  {activeForecastLocked && activeForecastProduct && activeForecastProductKey ? (
-                    <div className="live-locked-panel">
-                      <p className="reading-kicker">Premium reading</p>
-                      <h3>{activeForecastLockTitle}</h3>
-                      <p>{activeForecastLockCopy}</p>
-                      <button className="button-primary" type="button" onClick={() => void beginCheckout(activeForecastProductKey)}>
-                        Unlock {activeForecastProduct.title} — {activeForecastProduct.priceLabel}
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {!activeForecastLocked && activeForecast === "weekly" ? (
-                    forecastParagraphs.length ? (
-                      <>
-                        {forecastParagraphs.map((paragraph, index) => (
-                          <p key={`weekly-live-${index}`}>{renderMove(paragraph)}</p>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <p>{weeklySupport.opening}</p>
-                        <p>{weeklySupport.middle}</p>
-                        <p>{weeklySupport.closing}</p>
-                        <div className="live-timeline-list">
-                          {weeklySupport.themes.map(([day, theme]) => (
-                            <div key={day} className="live-timeline-item">
-                              <strong>{day}</strong>
-                              <p>{theme}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )
-                  ) : null}
-                  {!activeForecastLocked && activeForecast === "monthly" ? (
-                    <>
-                      <div className="live-longform-section">
-                        <p className="reading-kicker">The overarching narrative</p>
-                        {(monthlyNarrative.length ? monthlyNarrative : forecastParagraphs).map((paragraph, index) => (
-                          <p key={`monthly-${index}`}>{paragraph}</p>
-                        ))}
-                      </div>
-                      <div className="live-longform-section">
-                        <p className="reading-kicker">Retrogrades and stations</p>
-                        <div className="live-callout-stack">
-                          <div className="live-callout-card">
-                            <p className="reading-kicker">Timing note</p>
-                            <p>
-                              The month asks for fewer reactive commitments and more attention to what is quietly shifting underneath the surface.
-                            </p>
-                          </div>
-                          {transitSignal ? (
-                            <div className="live-callout-card">
-                              <p className="reading-kicker">{transitSignal.transitBody} against {transitSignal.natalBody}</p>
-                              <p>
-                                This pattern can make growth feel urgent and control feel justified. The better use of it is strategic pacing, not overreach.
-                              </p>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </>
-                  ) : null}
-                  {!activeForecastLocked && activeForecast === "yearly" ? (
-                    forecastParagraphs.length ? (
-                      forecastParagraphs.map((paragraph, index) => <p key={`${activeForecast}-${index}`}>{renderMove(paragraph)}</p>)
-                    ) : (
-                      <p>Choose a timeframe to load the reading.</p>
-                    )
-                  ) : null}
+                <div className="live-horizon-copy">
+                  {horizonParagraphs.map((paragraph, index) => (
+                    <p key={`${activeForecast}-copy-${index}`}>{renderMove(paragraph)}</p>
+                  ))}
                 </div>
+                {activeForecast === "weekly" && !forecastParagraphs.length ? (
+                  <div className="live-week-list">
+                    {weeklySupport.themes.map(([day, theme]) => (
+                      <div key={day}>
+                        <strong>{day}</strong>
+                        <p>{theme}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {activeForecast === "monthly" && transitSignal ? (
+                  <div className="live-transit-note">
+                    <p className="reading-kicker">{transitSignal.transitBody} / {transitSignal.natalBody}</p>
+                    <p>Use this timing as context for pacing, not as a verdict about what must happen.</p>
+                  </div>
+                ) : null}
               </section>
             )}
 
-            <UnderstandWhySection
-              copy="These placements explain how you move through the world, how you process experience, and how other people read you before much is said."
-              placements={bigThreeCards}
-            />
-
-            <section className="live-editorial-panel">
-              <p className="reading-kicker">The wider atmosphere</p>
-              <h2>{globalClimate.headline}</h2>
-              <p>{globalClimate.body}</p>
-              {globalClimate.metadata ? <p className="live-inline-metadata">{globalClimate.metadata}</p> : null}
-            </section>
-
-            <section className="live-editorial-panel live-architecture-panel">
-              <div className="live-panel-topline">
-                <p className="reading-kicker">Your chart pattern</p>
-              </div>
-              {chartSummaryParagraphs.length ? (
-                chartSummaryParagraphs.map((paragraph, index) => <p key={`summary-${index}`}>{renderMove(paragraph)}</p>)
-              ) : (
-                <p>Your chart summary is being prepared.</p>
-              )}
-              <div className="live-metadata-footer">
-                <div>
-                  <span>Calculated origin</span>
-                  <strong>{chart?.chart?.birth?.place ?? "Birth place pending"}</strong>
+            <section className="live-chart-summary" aria-labelledby="chart-summary-title">
+              <div className="live-chart-summary-copy">
+                <p className="reading-kicker">Your chart</p>
+                <h2 id="chart-summary-title">Your core placements</h2>
+                <div className="live-placement-list">
+                  {chartPlacements.map((placement) => (
+                    <div key={placement.body} className="live-placement-row">
+                      <span aria-hidden="true">{placementIcon(placement.body)}</span>
+                      <strong>{placement.body} in {placement.sign}</strong>
+                      <em>{placement.degreeLabel}</em>
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <span>Reading for</span>
-                  <strong>{memberLabel}</strong>
-                </div>
+                <p>{chartSummaryLine}</p>
+                <button className="live-inline-link" type="button" onClick={() => setShowFullChart((value) => !value)}>
+                  {showFullChart ? "Hide full chart" : "View full chart"}
+                  <span aria-hidden="true">→</span>
+                </button>
               </div>
+              <div className="live-chart-wheel-wrap">
+                <MiniChartWheel placements={chartPlacements} />
+              </div>
+              {showFullChart ? (
+                <div className="live-chart-details">
+                  {chartSummaryParagraphs.length ? (
+                    chartSummaryParagraphs.map((paragraph, index) => <p key={`summary-${index}`}>{renderMove(paragraph)}</p>)
+                  ) : (
+                    <p>Your chart summary will sharpen as the calculation finishes.</p>
+                  )}
+                  <div className="live-metadata-footer">
+                    <div>
+                      <span>Calculated origin</span>
+                      <strong>{chart?.chart?.birth?.place ?? "Birth place pending"}</strong>
+                    </div>
+                    <div>
+                      <span>Reading for</span>
+                      <strong>{memberLabel}</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
 
-            <section className="live-blueprint-panel live-editorial-panel-wide">
-              <p className="reading-kicker">Long view</p>
-              <h2>The 2026 Yearly Blueprint</h2>
-              <p>
-                A long-form reading that maps the year&apos;s major turning points against your exact chart, so your bigger decisions have a stronger frame around them.
-              </p>
-              <button className="live-blueprint-button" type="button" onClick={() => void beginCheckout("yearly_blueprint")}>
-                Unlock Blueprint - {blueprintPrice}
-              </button>
-            </section>
-
-            <section className="live-editorial-panel live-editorial-panel-wide">
-              <div className="live-panel-topline">
-                <p className="reading-kicker">Cosmic Pass</p>
-                <p className="live-inline-metadata">
-                  {entitlements?.premiumActive
-                    ? `Active${entitlements.expiresAt ? ` through ${new Date(entitlements.expiresAt).toLocaleDateString()}` : ""}`
-                    : "Membership inactive"}
+            <div className="live-dashboard-lower">
+              <section className="live-support-card">
+                <p className="reading-kicker">Support CosmoScope</p>
+                <h2>Enjoying CosmoScope?</h2>
+                <p>
+                  If today&apos;s reading helped you feel a little more prepared for the day ahead, and you&apos;d like to support the continued development of CosmoScope, you&apos;re welcome to leave a tip.
                 </p>
-              </div>
-              <h2>Choose how much of the system you want open all the time.</h2>
-              <div className="live-chip-row">
-                <button type="button" onClick={() => void beginCheckout("monthly_pass")}>
-                  Monthly Pass - $14.99
+                <button className="live-tip-button" type="button" onClick={() => void beginCheckout("tip_jar")}>
+                  Leave a Tip
+                  <span aria-hidden="true">♡</span>
                 </button>
-                <button type="button" onClick={() => void beginCheckout("annual_pass")}>
-                  Annual Pass - $99
-                </button>
-                <button type="button" onClick={() => void beginCheckout("lovescope_unlock")}>
-                  LoveScope - $2.99
-                </button>
-                <button type="button" onClick={() => void beginCheckout("starscope_unlock")}>
-                  StarScope - $3.99
-                </button>
-              </div>
-            </section>
+                <p className="live-support-note">Your support helps keep CosmoScope independent and ad-free.</p>
+              </section>
 
-            <section className="live-editorial-panel live-editorial-panel-wide live-account-panel">
-              <div className="live-panel-topline">
+              <section className="live-about-card">
+                <p className="reading-kicker">About CosmoScope</p>
+                <p>
+                  CosmoScope began as a personal project born from a lifelong fascination with astrology—not as a way to predict the future, but as a way to better understand the present.
+                </p>
+                <p>
+                  I believe astrology is most useful when it helps us prepare rather than fear. The goal isn&apos;t certainty. It&apos;s awareness.
+                </p>
+                <p>
+                  Every reading is designed to help you notice patterns, move through difficult moments with a little more intention, and appreciate the good ones while they&apos;re here.
+                </p>
+                <p>
+                  Prepare. Don&apos;t predict.
+                </p>
+              </section>
+
+              <section className="live-about-card">
+                <p className="reading-kicker">About the Designer</p>
+                <p>
+                  Hi, I&apos;m Jeff.
+                </p>
+                <p>
+                  I&apos;ve loved astrology for as long as I can remember. Over the years I found myself wishing there were an app that treated it with the same care that Apple brings to its products—thoughtful, beautiful, calm, and focused on the experience instead of the noise.
+                </p>
+                <p>
+                  CosmoScope is my attempt to build that app.
+                </p>
+                <p>
+                  Thank you for spending a few moments of your day here.
+                </p>
+                <p>
+                  — Jeff
+                </p>
+              </section>
+
+              <section className="live-account-panel">
                 <p className="reading-kicker">Account</p>
-                <p className="live-inline-metadata">Signed in on this device</p>
-              </div>
-              <h2>Manage this session.</h2>
-              <p>Sign out clears this browser session. Delete account permanently removes this CosmoScope account.</p>
-              <div className="live-account-actions">
-                <button className="button-secondary" type="button" onClick={handleSignOut}>
-                  Sign out
-                </button>
-                <button
-                  className="live-danger-button"
-                  disabled={isDeletingAccount}
-                  type="button"
-                  onClick={() => void handleDeleteAccount()}
-                >
-                  {isDeletingAccount ? "Deleting..." : "Delete account"}
-                </button>
-              </div>
-            </section>
-          </div>
+                <p>Sign out clears this browser session. Delete account permanently removes this CosmoScope account.</p>
+                <div className="live-account-actions">
+                  <button className="button-secondary" type="button" onClick={handleSignOut}>
+                    Sign out
+                  </button>
+                  <button
+                    className="live-danger-button"
+                    disabled={isDeletingAccount}
+                    type="button"
+                    onClick={() => void handleDeleteAccount()}
+                  >
+                    {isDeletingAccount ? "Deleting..." : "Delete account"}
+                  </button>
+                </div>
+              </section>
+            </div>
 
-          {toolStatus ? <p className="live-subtle">{toolStatus}</p> : null}
-          {error ? <p className="live-error">{error}</p> : null}
-
-          <div className="demo-footer-actions">
-            <button className="button-secondary" type="button" onClick={handleSignOut}>
-              Sign out
-            </button>
-            <a className="button-primary" href="/">
-              Return to overview
-            </a>
+            {toolStatus ? <p className="live-status-line">{toolStatus}</p> : null}
+            {error ? <p className="live-error">{error}</p> : null}
+            <p className="live-dashboard-close">Prepare. Don&apos;t predict.</p>
           </div>
         </section>
       ) : null}

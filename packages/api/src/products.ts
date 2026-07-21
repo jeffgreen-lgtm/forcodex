@@ -54,5 +54,14 @@ export const PREMIUM_PRODUCTS: Record<string, ProductDefinition> = {
     iosProductId: "com.greenhenn.cosmoscope.yearly_blueprint",
     stripePriceLookupKey: "yearly_blueprint",
     revenueCatEntitlement: "unlock_yearly_blueprint"
+  },
+  tip_jar: {
+    key: "tip_jar",
+    title: "Support CosmoScope",
+    kind: "one_time_unlock",
+    priceLabel: "Optional tip",
+    iosProductId: null,
+    stripePriceLookupKey: "tip_jar",
+    revenueCatEntitlement: null
   }
 };

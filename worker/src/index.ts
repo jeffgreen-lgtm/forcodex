@@ -705,10 +705,6 @@ async function handleForecast(request: Request, env: Env) {
   }
 
   const entitlements = await loadEntitlements(env, auth.token);
-  if (timeframe === "monthly" && !hasProductAccess(env, entitlements, "forecast_monthly")) {
-    throw new HttpError(402, "Monthly structure is a premium reading.");
-  }
-
   if (timeframe === "yearly" && !hasProductAccess(env, entitlements, "yearly_blueprint")) {
     throw new HttpError(402, "Yearly Blueprint is a premium reading.");
   }
