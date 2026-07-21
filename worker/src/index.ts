@@ -1213,11 +1213,14 @@ async function handleStudioRead(request: Request, env: Env) {
     : normalizedChart;
   const forecast = forecastTimeframe
     ? buildForecastCopy({
-        chart: chartWithTransit,
-        displayName: body.label,
-        timeframe: forecastTimeframe,
-        hasChart
-      })
+      chart: chartWithTransit,
+      displayName: body.label,
+      effectiveDate: getEffectiveDate(forecastTimeframe),
+      entitlements: buildDevReadingEngineSmokeEntitlements(),
+      env,
+      timeframe: forecastTimeframe,
+      hasChart
+    })
     : body.readingType === "starscope"
       ? buildStarScopeCopy({
           chart: chartWithTransit,
@@ -1570,7 +1573,7 @@ function buildEditorialBriefConfidenceLanguage(confidence: InterpretationPacketC
     case "low":
       return "There are several subtle influences worth paying attention to.";
     case "limited":
-      return "The available astrological signal is light, so the reading should stay modest and precise.";
+      return "The available astrological picture is light, so the reading should stay modest and precise.";
   }
 }
 
@@ -1946,12 +1949,7 @@ type ForecastBuildResult = {
 };
 
 async function buildForecastContentResult(input: ReadingEngineGenerationInput): Promise<ForecastBuildResult> {
-  const v1Content = buildForecastCopy({
-    chart: input.chart,
-    displayName: input.displayName,
-    timeframe: input.timeframe,
-    hasChart: input.hasChart
-  });
+  const v1Content = buildForecastCopy(input);
 
   if (!isReadingEngineV2Enabled(input.env)) {
     return {
@@ -2614,39 +2612,39 @@ function createMockAiReadingProvider(): AiReadingProvider {
       }
 
       if (input.timeframe === "weekly") {
+        const yourMove = "Pick the one task that changes the week if finished.";
         return {
           reading: {
             title: "Weekly breakdown",
             dateLabel,
             paragraphs: [
-              `The week’s actual story is not the loudest event. It is the sequence underneath it, and ${firstName}, your best read comes from noticing where ${sun.label}, ${moon.label}, and ${rising.label} are asking you to stop performing certainty and start moving from alignment.`,
-              `Early in the week, ${sun.label} wants ${sun.tone.drive}. That can be powerful, but only if you stop confusing motion with alignment. The first win is not a dramatic leap; it is refusing to spend your life force on a decision that has not earned it.`,
-              `Midweek, ${moon.label} becomes the truth serum. It needs ${moon.tone.need}. Notice what gets louder when you are tired, rushed, or trying to keep everyone else comfortable.`,
-              `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you return to the world with more signal and less residue. Your most aligned self does not need to drag the whole emotional weather system into every room.`,
-              `${pressure} marks the week’s pressure point: the urge to dramatize friction instead of reading it. The path forward is to treat friction as information, not a verdict.`
+              `This week is not one mood. It is a sequence, and ${firstName}, your best read comes from noticing where ${sun.label}, ${moon.label}, and ${rising.label} ask for cleaner timing.`,
+              `Early in the week, ${sun.label} wants ${sun.tone.drive}. That can be powerful, but only if the first move stays specific enough to use.`,
+              `Midweek, ${moon.label} needs ${moon.tone.need}. Notice what gets louder when you are tired, rushed, or trying to keep everyone else comfortable.`,
+              `By the end of the week, ${rising.label} becomes the re-entry point. Let ${rising.tone.style} help you return to conversations with fewer explanations and better timing.`,
+              `${pressure} marks the week’s clearest friction. Treat that friction as information about pace and attention, not as a verdict.`
             ],
-            signals: [sun.label, moon.label, rising.label, pressure, "sequence", "emotional weather"],
-            yourMove:
-              "Choose the repeating situation that keeps asking for your attention. Decide whether it needs action, a boundary, or simply less performance from you."
+            signals: [sun.label, moon.label, rising.label, pressure, "sequence", "timing"],
+            yourMove
           } satisfies ReadingEngineV2Result
         };
       }
 
       if (input.timeframe === "monthly") {
+        const yourMove = "Write down the simplest structure that would make this month easier to follow.";
         return {
           reading: {
             title: "Monthly structure",
             dateLabel,
             paragraphs: [
-              `${firstName}, the month’s deeper structure is not asking you to become someone else. It is asking you to notice where your current container no longer fits the life trying to come through.`,
-              `${capitalizeFirst(sun.label)} shows where the month wants movement: ${sun.tone.drive}. But your most aligned self does not move just to prove growth is happening. It moves when the timing, truth, and next step begin to agree.`,
-              `${capitalizeFirst(moon.label)} names the emotional term that cannot be skipped: ${moon.tone.need}. If that need is treated as optional, the month gets noisier. If it is honored, your choices start working with your energy instead of against it.`,
+              `${firstName}, the month’s deeper structure is not asking you to become someone else. It is asking you to notice where the current rhythm no longer fits what the month requires.`,
+              `${capitalizeFirst(sun.label)} shows where the month wants movement: ${sun.tone.drive}. Let that movement become useful by keeping the next step clear enough to repeat.`,
+              `${capitalizeFirst(moon.label)} names the emotional term that cannot be skipped: ${moon.tone.need}. If that need is treated as optional, choices can start to feel heavier than they are.`,
               `${capitalizeFirst(rising.label)} is the public-facing adjustment. This month, the path forward is not simply to be more visible. It is to become more legible to the right people, in the right rooms, for the right reasons.`,
-              `${pressure} gives the month its repeating signal. When the same theme returns, do not call it failure. Call it evidence. The pattern is showing you what needs a stronger structure, a cleaner boundary, or a more honest belief.`
+              `${pressure} gives the month its clearest repetition. When the same theme returns, do not call it failure. Call it evidence about timing, attention, and the next practical adjustment.`
             ],
             signals: [sun.label, moon.label, rising.label, pressure, "structure", "legibility"],
-            yourMove:
-              "Name one structure you keep outgrowing and one structure you keep pretending still fits. Let that contrast set the month’s aligned priority."
+            yourMove
           } satisfies ReadingEngineV2Result
         };
       }
@@ -2658,12 +2656,12 @@ function createMockAiReadingProvider(): AiReadingProvider {
           paragraphs: [
             `${firstName}, the year’s larger assignment is to build a life that can hold more truth without requiring constant emergency energy.`,
             `${capitalizeFirst(sun.label)} shows the direction of becoming: ${sun.tone.drive}. ${capitalizeFirst(moon.label)} shows the emotional term that cannot be skipped: ${moon.tone.need}. ${capitalizeFirst(rising.label)} shows how the world keeps asking you to become more legible without becoming less yourself.`,
-            `This is not reinvention for spectacle. It is the construction of a cleaner container for the person you already know you are becoming. The old version of you may still be negotiating, but the future version needs practical advantages, not just hope.`,
-            `${pressure} gives the year its pressure point. Pay attention to where the same lesson keeps wearing different clothes. That is where your life is asking for a more honest architecture: a choice, structure, or belief that lets your most aligned self become easier to live from.`
+            `This is not reinvention for spectacle. It is the construction of cleaner support for the person you already know you are becoming. The old version of you may still be negotiating, but the future version needs practical advantages, not just hope.`,
+            `${pressure} gives the year its clearest friction. Pay attention to where the same lesson keeps wearing different clothes. That is where your life is asking for a practical choice, a clearer routine, or a belief you can actually live from.`
           ],
-          signals: [sun.label, moon.label, rising.label, pressure, "larger assignment", "honest architecture"],
+          signals: [sun.label, moon.label, rising.label, pressure, "larger assignment", "practical support"],
           yourMove:
-            "Pick the area of life where the old version of you keeps negotiating with the future version. Give your most aligned self one practical advantage this week."
+            "Pick the area of life where the old version of you keeps negotiating with the future version. Give your future self one practical advantage this week."
         } satisfies ReadingEngineV2Result
       };
     }
@@ -3603,7 +3601,7 @@ const READING_ENGINE_SIGN_TONES: Record<string, ReadingEngineSignTone> = {
     gift: "imagination and compassion",
     need: "spaciousness, meaning, and protection from emotional overexposure",
     shadow: "dissolving boundaries instead of choosing a form",
-    style: "porous intuition"
+    style: "intuitive presence"
   }
 };
 
@@ -3616,17 +3614,9 @@ function readingEngineTone(sign: string | undefined): ReadingEngineSignTone {
     drive: "to move toward what feels true",
     gift: "pattern recognition",
     need: "clarity, steadiness, and room to respond honestly",
-    shadow: "reacting before the deeper signal is clear",
+    shadow: "reacting before the deeper pattern is clear",
     style: "a distinctive presence"
   };
-}
-
-function readingEngineTransitLine(signal: ChartPayload["dominantTransit"] | undefined) {
-  if (!signal) {
-    return "The current sky is not giving one dramatic headline; it is asking for cleaner pacing, cleaner choices, and a better relationship with what your body already knows.";
-  }
-
-  return `${signal.transitBody} in ${signal.transitSign} is pressing on your ${signal.natalBody}, so the day has a specific pressure point: the part of you that wants movement is negotiating with the part of you that needs a more honest container.`;
 }
 
 type ReadingEnginePlacementDescriptor = {
@@ -3653,33 +3643,146 @@ function readingEngineNames(input: { chart: ChartPayload | null; displayName: st
   };
 }
 
-function buildForecastCopy(input: { chart: ChartPayload | null; displayName: string; timeframe: ForecastTimeframe; hasChart: boolean }) {
+function buildForecastCopy(input: ReadingEngineGenerationInput) {
   if (!input.hasChart) {
-    return `Your CosmoScope is open, but the chart record is not complete enough for a precise reading yet.\n\nAdd the exact birth date, time, and place so the system can calculate the pattern instead of giving you a generic interpretation.\n\n**Your move:** complete the birth record, then come back for the reading that is actually yours.`;
+    return `Your CosmoScope is open, but the birth record is not complete enough for a precise reading yet.\n\nAdd the exact birth date, time, and place so CosmoScope can calculate the chart instead of giving you a generic interpretation.\n\n**Your move:** complete the birth record, then come back for the reading that is actually yours.`;
   }
 
   if (!hasUsableForecastPlacements(input.chart)) {
-    return `Your CosmoScope chart is saved, but the core placements did not load cleanly enough for a precise reading.\n\nRefresh the chart so the system can read your actual Sun, Moon, and Rising instead of falling back to generic placeholders.\n\n**Your move:** regenerate the chart, then open the forecast again.`;
+    return `Your CosmoScope chart is saved, but the core placements did not load cleanly enough for a precise reading.\n\nRefresh the chart so CosmoScope can read your actual Sun, Moon, and Rising instead of falling back to generic placeholders.\n\n**Your move:** regenerate the chart, then open the forecast again.`;
   }
 
-  const signal = input.chart?.dominantTransit;
+  const packet = buildInterpretationPacket(input);
+  const brief = packet ? buildEditorialBrief(packet) : null;
   const { firstName, moon, rising, sun } = readingEngineNames(input);
-  const transitLine = readingEngineTransitLine(signal);
+  const headline = buildFallbackHeadline(input.timeframe);
+  const yourMove = buildFallbackYourMove(input.timeframe, brief);
+  const transitContext = buildFallbackTransitContext(input, brief);
+  const chartContext = `${capitalizeFirst(sun.label)} describes how you choose what deserves effort. ${capitalizeFirst(moon.label)} describes what helps you settle before you react. ${capitalizeFirst(rising.label)} describes the tone people meet before you explain yourself.`;
 
   if (input.timeframe === "daily") {
-    return `${firstName}, today’s signal is not simply “good” or “bad.” It is a pressure pattern. ${capitalizeFirst(sun.label)} wants ${sun.tone.drive}, but the day works better when that drive is given shape instead of speed. ${transitLine}\n\n${capitalizeFirst(moon.label)} is the body-level clue. It usually needs ${moon.tone.need}, so if something feels louder than it should, treat that as information instead of an emergency. The emotional charge is not the instruction; it is the flare that shows you where the system wants care, limits, or a cleaner decision.\n\n${capitalizeFirst(rising.label)} is how the room meets you before you explain yourself. Let ${rising.tone.style} lead without turning it into performance. The cleanest use of today is to make your signal easier to read: fewer defensive explanations, fewer rushed commitments, and more attention to the choice that would actually lower the noise.\n\n**Your move:** choose one place where your nervous system wants instant certainty, then slow it down until the next right action becomes obvious.`;
+    const noticeWhen = buildFallbackNoticeWhen("daily");
+    const whyToday = [
+      `${firstName}, today is easier to work with when you treat timing as useful information, not as a demand to rush. ${transitContext}`,
+      `${chartContext} Read those placements together so the day feels specific instead of theoretical.`,
+      brief?.confidenceLanguage ?? "The available astrological picture is modest, so the reading stays focused on what can be used today."
+    ];
+    const learnYourSky =
+      "Your natal placements describe your baseline pattern; the current sky describes what may need more attention today.";
+
+    return [
+      headline,
+      ["Notice When", ...noticeWhen.map((item) => `- ${item}`)].join("\n"),
+      ["Why Today Feels This Way", ...whyToday].join("\n\n"),
+      `Learn Your Sky\n${learnYourSky}`,
+      `**Your move:** ${yourMove}`
+    ].join("\n\n");
   }
 
   if (input.timeframe === "weekly") {
-    return `This week is not one mood. It is a sequence, and ${firstName}, your best read comes from noticing when the pressure changes form.\n\nEarly in the week, ${sun.label} wants ${sun.tone.drive}, but the first move should be restraint, not proof. Start by narrowing the field. The task is not to win the whole week at once; it is to stop leaking energy into decisions that do not deserve that much of you.\n\nMidweek brings the sharper signal. ${signal ? `${signal.transitBody} pressing on your ${signal.natalBody} can make urgency sound more convincing than wisdom.` : "The pattern becomes easier to see once the week has created enough friction to reveal it."} This is where ${moon.label} needs ${moon.tone.need}. If you override that need, the week gets noisier. If you honor it cleanly, you recover leverage.\n\nBy the end of the week, ${rising.label} matters more than you may expect. That ${rising.tone.style} can help you re-enter conversations without dragging the whole emotional weather system behind you. The win is not a dramatic resolution. The win is a cleaner pattern, better timing, and one decision that finally feels structurally honest.\n\n**Your move:** pick the one situation that keeps asking for your attention, then decide whether it needs action, a boundary, or simply less performance from you.`;
+    return [
+      `This week is not one mood. ${firstName}, it is a sequence of small choices that become easier to read when you keep the pace clean.`,
+      `At the beginning of the week, ${sun.label} may pull attention toward ${sun.tone.drive}. Let that matter, but do not let it turn every decision into a referendum on who you are.`,
+      `Midweek, ${moon.label} asks for ${moon.tone.need}. If a reaction gets louder than the facts in front of you, pause long enough to separate care from urgency.`,
+      `By the end of the week, ${rising.label} helps you re-enter conversations through ${rising.tone.style}. ${transitContext}`,
+      `Use the week to choose the behavior that makes the next conversation cleaner, the next commitment smaller, and the next decision easier to stand behind.`,
+      `**Your move:** ${yourMove}`
+    ].join("\n\n");
   }
 
   if (input.timeframe === "monthly") {
-    return `${firstName}, this month is about structure: not the kind that makes life rigid, but the kind that lets your actual life hold more truth without spilling into constant reaction.\n\n${capitalizeFirst(sun.label)} is working through the deeper question underneath that drive. That desire is not wrong, but it needs a better container. The first part of the month shows you what has been running on habit, obligation, or old momentum. Pay attention to the places that look functional from the outside but feel expensive on the inside.\n\nThe middle of the month asks for a cleaner relationship with pressure. ${signal ? `${signal.transitBody} in ${signal.transitSign} activating your ${signal.natalBody} can make growth feel urgent, but urgency is not the same thing as readiness.` : "The live transit layer points toward consolidation rather than spectacle."} Let ${moon.label} name what it actually needs: ${moon.tone.need}. That need is not a weakness. It is a diagnostic tool.\n\nBy the final stretch of the month, the practical question becomes visible: what can stay, what has to be renegotiated, and what has only survived because you kept absorbing the cost? ${capitalizeFirst(rising.label)} shows the adjustment publicly through ${rising.tone.style}. People may notice the shift before they understand it.\n\nWork and money: choose the commitment that gives your effort a cleaner return. Love and family: stop translating your needs into hints. Body and energy: protect the rhythm that keeps you from confusing depletion with devotion.\n\n**Your move:** make one structural change this month that reduces hidden maintenance. The goal is not to make life smaller; it is to stop letting noise consume the energy meant for your actual growth.`;
+    return [
+      `${firstName}, this month is best approached through structure you can actually live with. The point is not to force certainty; it is to notice what keeps asking for a cleaner plan.`,
+      `${capitalizeFirst(sun.label)} shows where effort wants to go: ${sun.tone.drive}. Give that effort a smaller number of priorities so it can become useful instead of scattered.`,
+      `${capitalizeFirst(moon.label)} names the emotional condition that cannot be skipped: ${moon.tone.need}. When that need is ignored, choices can start to feel heavier than they are.`,
+      `${capitalizeFirst(rising.label)} describes the visible adjustment: ${rising.tone.style}. People may meet that shift before you have language for it, so let your actions explain what your words do not need to defend.`,
+      `${transitContext} Treat the repetition as evidence about timing and attention, not as proof that anything is fixed.`,
+      `Work and money: make one commitment easier to measure. Love and family: say the need directly instead of hoping it will be inferred. Body and energy: protect the rhythm that keeps you steady enough to choose well.`,
+      `**Your move:** ${yourMove}`
+    ].join("\n\n");
   }
 
-  return `${firstName}, the year is not asking you to become a different person. It is asking you to build a stronger container for the person you already are becoming.\n\n${capitalizeFirst(sun.label)} describes the central engine of the year. In the year ahead, that drive needs more than inspiration. It needs standards, timing, and a structure honest enough to hold the weight of what you say you want. Anything built only on mood will ask to be rebuilt later.\n\n${capitalizeFirst(moon.label)} names the emotional contract underneath the year. It needs ${moon.tone.need}, and when that need is ignored, your system will start sending signals through fatigue, sensitivity, resentment, or over-control. The emotional work of the year is not to become unaffected. It is to stop abandoning your own weather until it becomes a storm.\n\n${capitalizeFirst(rising.label)} describes the visible arc: ${rising.tone.style}. This is how the year teaches you to enter rooms, relationships, decisions, and opportunities with less distortion. You do not need to explain every layer of yourself to be legible. You need to make choices that let the right people read the signal clearly.\n\nThe first quarter is for clearing false urgency. The second quarter is for choosing the structure that can hold real growth. The third quarter tests whether the new rhythm works under pressure. The final quarter shows what becomes possible when your ambition, emotional truth, and public presentation stop competing with one another.\n\n${signal ? `The headline transit pattern — ${signal.transitBody} in ${signal.transitSign} pressing on your ${signal.natalBody} — gives the year its pressure point. It shows where growth will not come from forcing the issue, but from learning how to carry power with better timing.` : "The year’s strongest signal is steadiness: less performance, more discernment, fewer inherited obligations, and a cleaner relationship with what you are actually here to build."}\n\n**Your move:** choose the life structure that can still respect you when things get busy, emotional, or uncertain. That is the structure worth building the year around.`;
+  return [
+    `${firstName}, the year is asking for a life structure that can support what matters without turning every choice into emergency work.`,
+    `${capitalizeFirst(sun.label)} shows the direction your effort naturally takes. ${capitalizeFirst(moon.label)} shows what helps you recover enough to choose cleanly. ${capitalizeFirst(rising.label)} shows how other people begin reading your presence.`,
+    `${transitContext} Use that context to prepare, not to predict.`,
+    `The first quarter is for clearing false urgency. The second quarter is for choosing the routines that deserve repetition. The third quarter tests whether those choices still work when life gets full. The final quarter shows what becomes easier when fewer commitments compete for the same attention.`,
+    `**Your move:** ${yourMove}`
+  ].join("\n\n");
+}
+
+function buildFallbackHeadline(timeframe: ForecastTimeframe) {
+  switch (timeframe) {
+    case "daily":
+      return "Clarify before you commit.";
+    case "weekly":
+      return "Protect the work that actually moves things forward.";
+    case "monthly":
+      return "Keep the plan simple enough to follow.";
+    case "yearly":
+      return "The next right move matters more than the grand plan.";
   }
+}
+
+function buildFallbackNoticeWhen(timeframe: ForecastTimeframe) {
+  if (timeframe === "weekly") {
+    return [
+      "A task keeps expanding because no one has named what finished means.",
+      "You answer quickly just to remove tension from the room.",
+      "A useful plan becomes less useful because it has too many owners."
+    ];
+  }
+
+  if (timeframe === "monthly") {
+    return [
+      "A routine looks efficient but leaves you more depleted than prepared.",
+      "A commitment keeps asking for attention without giving clarity back.",
+      "A conversation needs a direct sentence instead of another hint."
+    ];
+  }
+
+  return [
+    "You start drafting a reply before you have finished reading the message.",
+    "A small decision grows because everyone wants certainty too early.",
+    "You explain your point twice when one clear sentence would have done the job."
+  ];
+}
+
+function buildFallbackYourMove(timeframe: ForecastTimeframe, brief: EditorialBrief | null) {
+  const action = brief?.readerAction;
+  if (action && !/^(No dominant transit|.+\s(?:in|with)\s.+)$/i.test(action)) {
+    return sentenceCase(action);
+  }
+
+  switch (timeframe) {
+    case "daily":
+      return "Ask one clarifying question before offering your opinion.";
+    case "weekly":
+      return "Pick the one task that changes the week if finished.";
+    case "monthly":
+      return "Write down the simplest structure that would make this month easier to follow.";
+    case "yearly":
+      return "Do the next useful step instead of revisiting the whole plan.";
+  }
+}
+
+function buildFallbackTransitContext(input: ReadingEngineGenerationInput, brief: EditorialBrief | null) {
+  const signal = input.chart?.dominantTransit;
+  if (!signal) {
+    return brief?.confidenceLanguage ?? "The current sky does not point to one dominant transit, so the reading stays modest and practical.";
+  }
+
+  const aspect = normalizeTransitAspect(signal.aspect).toLowerCase();
+  return `${signal.transitBody} in ${signal.transitSign} is ${aspect} your natal ${signal.natalBody}, which makes timing, attention, and response worth handling with more care.`;
+}
+
+function sentenceCase(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+}
 
 function hasUsableForecastPlacements(chart: ChartPayload | null) {
   if (!chart?.bigThree?.sun || !chart?.bigThree?.moon) {

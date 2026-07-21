@@ -5543,37 +5543,47 @@ div {
   max-width: 74ch;
 }
 
-.live-week-list {
-  border-top: 1px solid rgba(245, 233, 208, 0.13);
+.live-notice-when,
+.live-learn-sky {
+  border-top: 1px solid rgba(245, 233, 208, 0.12);
   display: grid;
-  margin-top: 30px;
-}
-
-.live-week-list > div {
-  border-bottom: 1px solid rgba(245, 233, 208, 0.11);
-  padding: 15px 0;
-}
-
-.live-week-list strong {
-  color: var(--dashboard-cream);
-  display: block;
-  font: 800 0.78rem/1.3 var(--font-inter), Arial, sans-serif;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.live-week-list p,
-.live-transit-note p {
-  color: rgba(245, 233, 208, 0.76);
-  margin: 6px 0 0;
-}
-
-.live-transit-note {
-  background: rgba(225, 177, 90, 0.08);
-  border: 1px solid rgba(225, 177, 90, 0.25);
-  border-radius: 14px;
+  gap: 14px;
   margin-top: 28px;
-  padding: 18px;
+  max-width: 68ch;
+  padding-top: 22px;
+}
+
+.live-notice-when ul {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.live-notice-when li {
+  color: rgba(245, 233, 208, 0.82);
+  line-height: 1.6;
+  padding-left: 22px;
+  position: relative;
+}
+
+.live-notice-when li::before {
+  background: var(--dashboard-gold);
+  border-radius: 999px;
+  content: "";
+  height: 5px;
+  left: 0;
+  position: absolute;
+  top: 0.72em;
+  width: 5px;
+}
+
+.live-learn-sky p:last-child,
+.live-reading-empty {
+  color: rgba(245, 233, 208, 0.72);
+  line-height: 1.65;
+  margin: 0;
 }
 
 .live-chart-summary {

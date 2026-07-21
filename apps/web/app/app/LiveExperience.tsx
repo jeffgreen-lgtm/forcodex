@@ -1186,24 +1186,13 @@ export function LiveExperience() {
 
   const forecastTabs: ForecastTimeframe[] = ["daily", "weekly", "monthly", "yearly"];
   const activeForecastCopy = forecasts[activeForecast];
-  const transitSignal = chart?.chart?.dominantTransit;
   const chartPlacements = buildChartPlacements(chart);
   const chartSummaryLine = buildChartSummaryLine(chartPlacements);
-  const chartBigThree = chartPlacements.map((placement) => placement.sign).filter((sign) => sign && sign !== "Pending").join(" • ");
   const cleanedForecastContent = sanitizeUserFacingCopy(activeForecastCopy?.content, memberLabel);
   const forecastBody = cleanedForecastContent;
   const forecastParagraphs = splitParagraphs(forecastBody);
   const cleanedChartSummary = sanitizeUserFacingCopy(chart?.summary, memberLabel);
   const chartSummaryParagraphs = splitParagraphs(cleanedChartSummary);
-  const globalClimate = buildGlobalClimateReading(transitSignal);
-  const weeklySupport = buildWeeklySupport(chartBigThree, transitSignal);
-  const monthlyNarrative = chunkSentences(
-    forecastBody
-      .split(/(?<=[.!?])\s+/)
-      .map((sentence) => sentence.trim())
-      .filter(Boolean),
-    2
-  );
   const isActiveSignupIntake = mode === "signup" && signupStep !== "welcome";
   const dailyBrief = resolveTodaysBriefData({
     content: cleanedForecastContent,
@@ -1214,22 +1203,7 @@ export function LiveExperience() {
     structuredDailyBrief: activeForecastCopy?.structuredDailyBrief ?? null
   });
   const dailyReadingParagraphs = dailyBrief.whyTodayFeelsThisWay.length ? dailyBrief.whyTodayFeelsThisWay : forecastParagraphs;
-  const monthlyFallback = [
-    "This month asks for clearer structure around the routines, conversations, and decisions that carry the most weight.",
-    "Use the larger pattern as a pacing guide. The goal is not to force certainty, but to notice which commitments deserve more care before they expand."
-  ];
-  const horizonParagraphs =
-    activeForecast === "weekly"
-      ? forecastParagraphs.length
-        ? forecastParagraphs
-        : [weeklySupport.opening, weeklySupport.middle, weeklySupport.closing]
-      : activeForecast === "monthly"
-        ? monthlyNarrative.length
-          ? monthlyNarrative
-          : forecastParagraphs.length
-            ? forecastParagraphs
-            : monthlyFallback
-        : [];
+  const horizonParagraphs = activeForecast === "weekly" || activeForecast === "monthly" ? forecastParagraphs : [];
 
   return (
     <main className="live-shell">
@@ -1653,13 +1627,29 @@ export function LiveExperience() {
                       <p key={`daily-brief-${index}`}>{renderMove(paragraph)}</p>
                     ))}
                   </div>
+                  {dailyBrief.noticeWhen.length ? (
+                    <div className="live-notice-when" aria-labelledby="notice-when-title">
+                      <p id="notice-when-title" className="reading-kicker">Notice when</p>
+                      <ul>
+                        {dailyBrief.noticeWhen.slice(0, 3).map((item, index) => (
+                          <li key={`notice-when-${index}`}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                   <div className="live-consider-today">
                     <span aria-hidden="true">✶</span>
                     <div>
-                      <p className="reading-kicker">Consider today</p>
+                      <p className="reading-kicker">Your move</p>
                       <p>{dailyBrief.yourMove}</p>
                     </div>
                   </div>
+                  {dailyBrief.learnYourSky ? (
+                    <div className="live-learn-sky">
+                      <p className="reading-kicker">Learn your sky</p>
+                      <p>{dailyBrief.learnYourSky}</p>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="live-primary-brief-art" aria-hidden="true" />
               </section>
@@ -1673,26 +1663,14 @@ export function LiveExperience() {
                   <p>{formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}</p>
                 </div>
                 <div className="live-horizon-copy">
-                  {horizonParagraphs.map((paragraph, index) => (
-                    <p key={`${activeForecast}-copy-${index}`}>{renderMove(paragraph)}</p>
-                  ))}
+                  {horizonParagraphs.length ? (
+                    horizonParagraphs.map((paragraph, index) => (
+                      <p key={`${activeForecast}-copy-${index}`}>{renderMove(paragraph)}</p>
+                    ))
+                  ) : (
+                    <p className="live-reading-empty">This reading is being prepared. Try again in a moment.</p>
+                  )}
                 </div>
-                {activeForecast === "weekly" && !forecastParagraphs.length ? (
-                  <div className="live-week-list">
-                    {weeklySupport.themes.map(([day, theme]) => (
-                      <div key={day}>
-                        <strong>{day}</strong>
-                        <p>{theme}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {activeForecast === "monthly" && transitSignal ? (
-                  <div className="live-transit-note">
-                    <p className="reading-kicker">{transitSignal.transitBody} / {transitSignal.natalBody}</p>
-                    <p>Use this timing as context for pacing, not as a verdict about what must happen.</p>
-                  </div>
-                ) : null}
               </section>
             )}
 
