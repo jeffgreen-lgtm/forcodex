@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { API_PATHS, type ProductKey } from "@cosmoscope/api";
+import { API_PATHS } from "@cosmoscope/api";
 import { resolveTodaysBriefData, type StructuredDailyBrief } from "../components/todaysBriefData";
 import { resolveCosmoScopeApiBaseUrl } from "../lib/apiBaseUrl";
 
@@ -95,19 +95,6 @@ type ForecastResponse = {
   effectiveDate: string;
   structuredDailyBrief?: StructuredDailyBrief | null;
   timeframe: ForecastTimeframe;
-};
-
-type StarScopeResponse = {
-  content: string;
-  productKey: string;
-  question: string;
-};
-
-type LoveScopeResponse = {
-  content: string;
-  partnerName: string;
-  productKey: string;
-  relationshipType: string;
 };
 
 type EntitlementsResponse = {
@@ -574,12 +561,6 @@ export function LiveExperience() {
   const [entitlements, setEntitlements] = useState<EntitlementsResponse | null>(null);
   const [forecasts, setForecasts] = useState<Partial<Record<ForecastTimeframe, ForecastResponse>>>({});
   const [activeForecast, setActiveForecast] = useState<ForecastTimeframe>("daily");
-  const [starQuestion, setStarQuestion] = useState("What deserves my cleanest attention this week?");
-  const [starScope, setStarScope] = useState<StarScopeResponse | null>(null);
-  const [partnerName, setPartnerName] = useState("Alex");
-  const [relationshipType, setRelationshipType] = useState("Dating");
-  const [loveSituation, setLoveSituation] = useState("The connection is strong, but the expectations are not fully named.");
-  const [loveScope, setLoveScope] = useState<LoveScopeResponse | null>(null);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -715,12 +696,6 @@ export function LiveExperience() {
     setEntitlements(null);
     setForecasts({});
     setActiveForecast("daily");
-    setStarQuestion("What deserves my cleanest attention this week?");
-    setStarScope(null);
-    setPartnerName("Alex");
-    setRelationshipType("Dating");
-    setLoveSituation("The connection is strong, but the expectations are not fully named.");
-    setLoveScope(null);
     setError(null);
     setToolStatus(message);
     setIsDeletingAccount(false);
@@ -1066,7 +1041,7 @@ export function LiveExperience() {
     }
   }
 
-  async function beginCheckout(productKey: ProductKey) {
+  async function beginCheckout(productKey: "tip_jar") {
     if (!accessToken) {
       setError("Create or open your account before starting checkout.");
       return;
@@ -1096,7 +1071,7 @@ export function LiveExperience() {
     setError(null);
 
     if (timeframe === "yearly") {
-      setToolStatus("The Yearly Blueprint is coming soon.");
+      setToolStatus("This Year is coming soon.");
       return;
     }
 
@@ -1157,53 +1132,6 @@ export function LiveExperience() {
     }
   }
 
-  async function runStarScope() {
-    if (!accessToken) {
-      return;
-    }
-
-    setToolStatus("Loading StarScope...");
-    setError(null);
-    try {
-      const response = await request<StarScopeResponse>(API_PATHS.starscope, {
-        body: JSON.stringify({ question: starQuestion }),
-        headers: authHeaders(accessToken),
-        method: "POST"
-      });
-      setStarScope(response);
-      setToolStatus(null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load StarScope.");
-      setToolStatus(null);
-    }
-  }
-
-  async function runLoveScope() {
-    if (!accessToken) {
-      return;
-    }
-
-    setToolStatus("Loading LoveScope...");
-    setError(null);
-    try {
-      const response = await request<LoveScopeResponse>(API_PATHS.lovescope, {
-        body: JSON.stringify({
-          partnerBirthDate: null,
-          partnerName,
-          relationshipType,
-          situation: loveSituation
-        }),
-        headers: authHeaders(accessToken),
-        method: "POST"
-      });
-      setLoveScope(response);
-      setToolStatus(null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load LoveScope.");
-      setToolStatus(null);
-    }
-  }
-
   async function sendResetLink() {
     if (!email.trim()) {
       setError("Enter your email first, then request a reset link.");
@@ -1232,7 +1160,7 @@ export function LiveExperience() {
     const confirmed =
       typeof window !== "undefined" &&
       window.confirm(
-        "Delete your CosmoScope account? This removes your login, chart, readings, and premium access from this account. This cannot be undone."
+        "Delete your CosmoScope account? This removes your login, chart, and readings from this account. This cannot be undone."
       );
 
     if (!confirmed) {

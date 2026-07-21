@@ -2467,28 +2467,6 @@ div {
   }
 }
 
-.live-locked-panel {
-  border: 1px solid rgba(245, 198, 111, 0.42);
-  border-radius: 28px;
-  padding: clamp(1.25rem, 3vw, 2rem);
-  background:
-    radial-gradient(circle at top left, rgba(245, 198, 111, 0.2), transparent 38%),
-    rgba(11, 8, 15, 0.62);
-}
-
-.live-locked-panel h3 {
-  margin: 0.25rem 0 0.75rem;
-  max-width: 760px;
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 5vw, 4rem);
-  line-height: 0.95;
-}
-
-.live-locked-panel p:not(.reading-kicker) {
-  max-width: 760px;
-  margin-bottom: 1.25rem;
-}
-
 /* Approved premium mobile direction: celestial, restrained, and step-focused. */
 .front-door-shell,
 .live-shell {
