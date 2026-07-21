@@ -5125,9 +5125,15 @@ function getCorsHeaders(request?: Request, env?: Env) {
     allowedOrigins.add(env.APP_URL.trim());
   }
 
+  allowedOrigins.add("https://cosmoscope.pages.dev");
+
+  const requestOriginAllowed = Boolean(
+    requestOrigin && (allowedOrigins.has(requestOrigin) || isAllowedCosmoScopePagesPreviewOrigin(requestOrigin))
+  );
+
   const accessControlAllowOrigin =
     allowedOrigins.size > 0
-      ? requestOrigin && allowedOrigins.has(requestOrigin)
+      ? requestOriginAllowed
         ? requestOrigin
         : Array.from(allowedOrigins)[0]
       : "*";
@@ -5138,6 +5144,15 @@ function getCorsHeaders(request?: Request, env?: Env) {
     "access-control-allow-origin": accessControlAllowOrigin,
     "vary": "Origin"
   };
+}
+
+function isAllowedCosmoScopePagesPreviewOrigin(origin: string) {
+  try {
+    const url = new URL(origin);
+    return url.protocol === "https:" && url.hostname.endsWith(".cosmoscope.pages.dev");
+  } catch {
+    return false;
+  }
 }
 
 function getAppOrigin(request: Request, env: Env) {
