@@ -164,69 +164,73 @@ export default {
       const path = url.pathname;
       const routeKey = `${request.method.toUpperCase()} ${path}`;
 
-      switch (routeKey) {
-        case "GET /":
-        case "GET /health":
-          return json({
-            appEnv: env.APP_ENV ?? "development",
-            ok: true,
-            routes: WORKER_ROUTE_MANIFEST.length,
-            service: "cosmoscope-api",
-            supabaseConfigured: hasSupabaseEnv(env)
-          });
-        case "GET /api/manifest":
-          return json({ routes: WORKER_ROUTE_MANIFEST });
-        case `POST ${API_PATHS.login}`:
-          return await handleLogin(request, env);
-        case `POST ${API_PATHS.signup}`:
-          return await handleSignup(request, env);
-        case `POST ${API_PATHS.resetPassword}`:
-          return await handleResetPassword(request, env);
-        case `POST ${API_PATHS.updatePassword}`:
-          return await handleUpdatePassword(request, env);
-        case `POST ${API_PATHS.geocode}`:
-          return await handleGeocode(request);
-        case `POST ${API_PATHS.studioRead}`:
-          return await handleStudioRead(request, env);
-        case `POST ${API_PATHS.createCheckoutSession}`:
-          return await handleCreateCheckoutSession(request, env);
-        case `POST ${API_PATHS.confirmCheckoutSession}`:
-          return await handleConfirmCheckoutSession(request, env);
-        case `POST ${API_PATHS.deleteAccount}`:
-          return await handleDeleteAccount(request, env);
-        case `GET ${API_PATHS.entitlements}`:
-          return await handleEntitlements(request, env);
-        case `GET ${API_PATHS.ledger}`:
-          return await handleLedger(request, env);
-        case `POST ${API_PATHS.chart}`:
-          return await handleChart(request, env);
-        case `POST ${API_PATHS.starscope}`:
-          return await handleStarScope(request, env);
-        case `POST ${API_PATHS.lovescope}`:
-          return await handleLoveScope(request, env);
-        case `POST ${API_PATHS.forecast}`:
-          return await handleForecast(request, env);
-        case "POST /api/dev/reading-engine-v2-smoke":
-          return await handleDevReadingEngineV2Smoke(request, env);
-        case "POST /api/dev/reading-engine-v2-gemini-smoke":
-          return await handleDevReadingEngineV2GeminiSmoke(request, env);
-        case "POST /api/dev/reading-engine-v2-gemini-batch":
-          return await handleDevReadingEngineV2GeminiBatch(request, env);
-        case `POST ${API_PATHS.verifyAppleTransaction}`:
-          return await handleVerifyAppleTransaction(request, env);
-        case `POST ${API_PATHS.appleServerNotification}`:
-          return await handleAppleServerNotification(request, env);
-        default:
-          return json(
-            {
-              error: "not_found",
-              message: "Route not found."
-            },
-            { status: 404 },
-            request,
-            env
-          );
-      }
+      const response = await (async () => {
+        switch (routeKey) {
+          case "GET /":
+          case "GET /health":
+            return json({
+              appEnv: env.APP_ENV ?? "development",
+              ok: true,
+              routes: WORKER_ROUTE_MANIFEST.length,
+              service: "cosmoscope-api",
+              supabaseConfigured: hasSupabaseEnv(env)
+            });
+          case "GET /api/manifest":
+            return json({ routes: WORKER_ROUTE_MANIFEST });
+          case `POST ${API_PATHS.login}`:
+            return await handleLogin(request, env);
+          case `POST ${API_PATHS.signup}`:
+            return await handleSignup(request, env);
+          case `POST ${API_PATHS.resetPassword}`:
+            return await handleResetPassword(request, env);
+          case `POST ${API_PATHS.updatePassword}`:
+            return await handleUpdatePassword(request, env);
+          case `POST ${API_PATHS.geocode}`:
+            return await handleGeocode(request);
+          case `POST ${API_PATHS.studioRead}`:
+            return await handleStudioRead(request, env);
+          case `POST ${API_PATHS.createCheckoutSession}`:
+            return await handleCreateCheckoutSession(request, env);
+          case `POST ${API_PATHS.confirmCheckoutSession}`:
+            return await handleConfirmCheckoutSession(request, env);
+          case `POST ${API_PATHS.deleteAccount}`:
+            return await handleDeleteAccount(request, env);
+          case `GET ${API_PATHS.entitlements}`:
+            return await handleEntitlements(request, env);
+          case `GET ${API_PATHS.ledger}`:
+            return await handleLedger(request, env);
+          case `POST ${API_PATHS.chart}`:
+            return await handleChart(request, env);
+          case `POST ${API_PATHS.starscope}`:
+            return await handleStarScope(request, env);
+          case `POST ${API_PATHS.lovescope}`:
+            return await handleLoveScope(request, env);
+          case `POST ${API_PATHS.forecast}`:
+            return await handleForecast(request, env);
+          case "POST /api/dev/reading-engine-v2-smoke":
+            return await handleDevReadingEngineV2Smoke(request, env);
+          case "POST /api/dev/reading-engine-v2-gemini-smoke":
+            return await handleDevReadingEngineV2GeminiSmoke(request, env);
+          case "POST /api/dev/reading-engine-v2-gemini-batch":
+            return await handleDevReadingEngineV2GeminiBatch(request, env);
+          case `POST ${API_PATHS.verifyAppleTransaction}`:
+            return await handleVerifyAppleTransaction(request, env);
+          case `POST ${API_PATHS.appleServerNotification}`:
+            return await handleAppleServerNotification(request, env);
+          default:
+            return json(
+              {
+                error: "not_found",
+                message: "Route not found."
+              },
+              { status: 404 },
+              request,
+              env
+            );
+        }
+      })();
+
+      return withCorsHeaders(response, request, env);
     } catch (error) {
       return handleError(error, request, env);
     }
@@ -5073,6 +5077,37 @@ function handleError(error: unknown, request: Request, env: Env) {
     request,
     env
   );
+}
+
+function withCorsHeaders(response: Response, request: Request, env: Env) {
+  const headers = new Headers(response.headers);
+  const corsHeaders = getCorsHeaders(request, env);
+
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    if (key === "vary") {
+      const currentVary = headers.get("vary");
+      headers.set("vary", mergeVaryHeader(currentVary, value));
+    } else {
+      headers.set(key, value);
+    }
+  }
+
+  return new Response(response.body, {
+    headers,
+    status: response.status,
+    statusText: response.statusText
+  });
+}
+
+function mergeVaryHeader(currentValue: string | null, nextValue: string) {
+  const values = new Set(
+    `${currentValue ?? ""},${nextValue}`
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+
+  return Array.from(values).join(", ");
 }
 
 function json(payload: unknown, init: ResponseInit = {}, request?: Request, env?: Env) {
