@@ -397,8 +397,8 @@ function MiniChartWheel({ placements }: { placements: ChartPlacementSummary[] })
 function buildGlobalClimateReading(signal: TransitSignal | undefined) {
   if (!signal) {
     return {
-      body: "Today’s collective reading will appear here once the live transit layer is available.",
-      headline: "Today’s wider atmosphere",
+      body: "The wider sky will appear here once the live transit layer is available.",
+      headline: "The wider sky",
       metadata: null as string | null
     };
   }
@@ -711,7 +711,7 @@ export function LiveExperience() {
     if (query.length < 3) {
       setGeocodeResults([]);
       setLocationStatus("idle");
-      setError("Enter a city or town first, like Marietta, Georgia.");
+      setError("Enter a city or town first.");
       return;
     }
 
@@ -739,7 +739,7 @@ export function LiveExperience() {
     } catch {
       setGeocodeResults([]);
       setLocationStatus("idle");
-      setError("We could not find that place yet. Try city and state, like Marietta, Georgia.");
+      setError("We could not find that place yet. Try adding the state, province, or country.");
     }
   }
 
@@ -751,7 +751,7 @@ export function LiveExperience() {
     const query = birthPlace.trim();
 
     if (query.length < 3) {
-      throw new Error("Enter a city or town first, like Marietta, Georgia.");
+      throw new Error("Enter a city or town first.");
     }
 
     setLocationStatus("searching");
@@ -764,7 +764,7 @@ export function LiveExperience() {
         method: "POST"
       });
     } catch {
-      throw new Error("We could not find that place yet. Try city and state, like Marietta, Georgia.");
+      throw new Error("We could not find that place yet. Try adding the state, province, or country.");
     }
 
     setGeocodeResults(payload.results);
@@ -1130,7 +1130,7 @@ export function LiveExperience() {
     } catch (caught) {
       console.warn(`${timeframe} forecast did not load.`, caught);
       setError(null);
-      setToolStatus(`The live ${forecastLabels[timeframe]} did not load, so we are showing the built-in ${forecastLabels[timeframe]} view for now.`);
+      setToolStatus(`${forecastLabels[timeframe]} did not load. Try again in a moment.`);
     }
   }
 
@@ -1195,11 +1195,12 @@ export function LiveExperience() {
   const cleanedChartSummary = sanitizeUserFacingCopy(chart?.summary, memberLabel);
   const chartSummaryParagraphs = splitParagraphs(cleanedChartSummary);
   const isActiveSignupIntake = mode === "signup" && signupStep !== "welcome";
+  const hasActiveForecastContent = Boolean(cleanedForecastContent.trim());
   const dailyBrief = resolveTodaysBriefData({
     content: cleanedForecastContent,
     fallbackHeadline:
       forecastParagraphs[0] ||
-      `Today asks ${firstName} for steadier pacing and clearer choices.` ||
+      "Your Today’s Brief is loading." ||
       "A clearer daily reading will appear here once the latest forecast finishes loading.",
     structuredDailyBrief: activeForecastCopy?.structuredDailyBrief ?? null
   });
@@ -1290,7 +1291,7 @@ export function LiveExperience() {
                         autoComplete="given-name"
                         value={displayName}
                         onChange={(event) => setDisplayName(event.target.value)}
-                        placeholder="Jeff"
+                        placeholder="Alex"
                       />
                     </label>
                   </section>
@@ -1339,7 +1340,7 @@ export function LiveExperience() {
                           maxLength={2}
                           value={birthMonth}
                           onChange={(event) => setBirthMonth(event.target.value)}
-                          placeholder="11"
+                          placeholder="01"
                         />
                       </label>
                       <label className="demo-field live-field">
@@ -1349,7 +1350,7 @@ export function LiveExperience() {
                           maxLength={2}
                           value={birthDay}
                           onChange={(event) => setBirthDay(event.target.value)}
-                          placeholder="30"
+                          placeholder="15"
                         />
                       </label>
                       <label className="demo-field live-field">
@@ -1359,7 +1360,7 @@ export function LiveExperience() {
                           maxLength={4}
                           value={birthYear}
                           onChange={(event) => setBirthYear(event.target.value)}
-                          placeholder="1983"
+                          placeholder="1990"
                         />
                       </label>
                     </div>
@@ -1382,7 +1383,7 @@ export function LiveExperience() {
                           maxLength={2}
                           value={birthHour}
                           onChange={(event) => setBirthHour(event.target.value)}
-                          placeholder="9"
+                          placeholder="8"
                         />
                       </label>
                       <label className="demo-field live-field">
@@ -1393,7 +1394,7 @@ export function LiveExperience() {
                           maxLength={2}
                           value={birthMinute}
                           onChange={(event) => setBirthMinute(event.target.value)}
-                          placeholder="07"
+                          placeholder="30"
                         />
                       </label>
                       <label className="demo-field live-field">
@@ -1441,7 +1442,7 @@ export function LiveExperience() {
                           setLocationStatus("idle");
                           setToolStatus(null);
                         }}
-                        placeholder="Marietta, Georgia"
+                        placeholder="City, state, or country"
                       />
                     </label>
                     <button
@@ -1630,35 +1631,48 @@ export function LiveExperience() {
               <section className="live-primary-brief" aria-labelledby="today-brief-title">
                 <div className="live-primary-brief-copy">
                   <p className="reading-kicker">{formatEffectiveLabel(activeForecastCopy?.effectiveDate, activeForecast)}</p>
-                  <h1 id="today-brief-title">{dailyBrief.headline}</h1>
-                  <div className="live-brief-paragraphs">
-                    {dailyReadingParagraphs.slice(0, 3).map((paragraph, index) => (
-                      <p key={`daily-brief-${index}`}>{renderMove(paragraph)}</p>
-                    ))}
-                  </div>
-                  {dailyBrief.noticeWhen.length ? (
-                    <div className="live-notice-when" aria-labelledby="notice-when-title">
-                      <p id="notice-when-title" className="reading-kicker">Notice when</p>
-                      <ul>
-                        {dailyBrief.noticeWhen.slice(0, 3).map((item, index) => (
-                          <li key={`notice-when-${index}`}>{item}</li>
-                        ))}
-                      </ul>
+                  {hasActiveForecastContent ? (
+                    <>
+                      <p className="reading-kicker live-brief-title-kicker">Today&apos;s Headline</p>
+                      <h1 id="today-brief-title">{dailyBrief.headline}</h1>
+                      {dailyBrief.noticeWhen.length ? (
+                        <div className="live-notice-when" aria-labelledby="notice-when-title">
+                          <p id="notice-when-title" className="reading-kicker">Notice when</p>
+                          <ul>
+                            {dailyBrief.noticeWhen.slice(0, 2).map((item, index) => (
+                              <li key={`notice-when-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      <div className="live-consider-today">
+                        <span aria-hidden="true">✶</span>
+                        <div>
+                          <p className="reading-kicker">Your move</p>
+                          <p>{dailyBrief.yourMove}</p>
+                        </div>
+                      </div>
+                      {dailyReadingParagraphs.length ? (
+                        <div className="live-brief-paragraphs" aria-labelledby="why-today-title">
+                          <p id="why-today-title" className="reading-kicker">Why today feels this way</p>
+                          {dailyReadingParagraphs.slice(0, 3).map((paragraph, index) => (
+                            <p key={`daily-brief-${index}`}>{renderMove(paragraph)}</p>
+                          ))}
+                        </div>
+                      ) : null}
+                      {dailyBrief.learnYourSky ? (
+                        <div className="live-learn-sky">
+                          <p className="reading-kicker">Learn your sky</p>
+                          <p>{dailyBrief.learnYourSky}</p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="live-reading-loading" aria-live="polite">
+                      <h1 id="today-brief-title">Your Today&apos;s Brief is loading.</h1>
+                      <p>CosmoScope is preparing the current sky against your saved chart.</p>
                     </div>
-                  ) : null}
-                  <div className="live-consider-today">
-                    <span aria-hidden="true">✶</span>
-                    <div>
-                      <p className="reading-kicker">Your move</p>
-                      <p>{dailyBrief.yourMove}</p>
-                    </div>
-                  </div>
-                  {dailyBrief.learnYourSky ? (
-                    <div className="live-learn-sky">
-                      <p className="reading-kicker">Learn your sky</p>
-                      <p>{dailyBrief.learnYourSky}</p>
-                    </div>
-                  ) : null}
+                  )}
                 </div>
                 <div className="live-primary-brief-art" aria-hidden="true" />
               </section>
