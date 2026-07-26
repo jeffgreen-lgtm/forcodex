@@ -124,4 +124,24 @@ withEnv("NEXT_PUBLIC_COSMOSCOPE_API_BASE_URL", "https://api.example.com/", () =>
   assert.doesNotMatch(workerSource, /The astrological picture today is unusually clear/);
 }
 
+{
+  const workerSource = readFileSync(resolve(rootDir, "worker/src/index.ts"), "utf8");
+  const webSource = readFileSync(resolve(rootDir, "apps/web/app/app/LiveExperience.tsx"), "utf8");
+  const wranglerConfig = readFileSync(resolve(rootDir, "worker/wrangler.jsonc"), "utf8");
+
+  assert.match(workerSource, /birthDate:\s*profile\.birth_date/);
+  assert.match(workerSource, /birth_input_hash:\s*astrologyInput\.birthInputHash/);
+  assert.match(workerSource, /audit_metadata:\s*audit/);
+  assert.match(workerSource, /structured_brief:\s*result\.structuredDailyBrief/);
+  assert.match(workerSource, /Mock reading smoke is disabled/);
+  assert.doesNotMatch(workerSource, /function createMockAiReadingProvider/);
+  assert.match(wranglerConfig, /"AI_READING_PROVIDER":\s*"none"/);
+  assert.doesNotMatch(webSource, /birthDate:\s*forecastBirthDate/);
+  assert.doesNotMatch(webSource, /birthTime:\s*forecastBirthTime/);
+  assert.match(webSource, /forecast_monthly:\s*"Week \+ Month Unlock"/);
+  assert.match(workerSource, /productKey !== "forecast_monthly" && productKey !== "tip_jar"/);
+  assert.match(workerSource, /timeframe === "weekly" \|\| timeframe === "monthly"/);
+  assert.match(workerSource, /requiredProductKey:\s*"forecast_monthly"/);
+}
+
 console.log("Beta hardening tests passed.");

@@ -27,6 +27,7 @@ type GeocodeResult = {
   label: string;
   latitude: number;
   longitude: number;
+  provider?: string;
   timezone: string;
 };
 
@@ -90,11 +91,26 @@ type ChartResponse = {
 };
 
 type ForecastResponse = {
+  audit?: ForecastAuditMetadata | null;
   cached: boolean;
   content: string;
   effectiveDate: string;
   structuredDailyBrief?: StructuredDailyBrief | null;
   timeframe: ForecastTimeframe;
+};
+
+type ForecastAuditMetadata = {
+  astrologyApiEndpoints: string[];
+  birthInputHash: string;
+  chartCached: boolean;
+  chartSourceVersion: string;
+  dominantTransit: string | null;
+  fallbackUsed: boolean;
+  geocodeProvider: string | null;
+  provider: string | null;
+  readingEngineVersion: string;
+  source: string;
+  transitSignalCount: number;
 };
 
 type EntitlementsResponse = {
@@ -119,7 +135,16 @@ type CheckoutSessionResponse = {
   url: string;
 };
 
-type ResolvedBirthLocation = Pick<GeocodeResult, "label" | "latitude" | "longitude" | "timezone">;
+type ProductKey =
+  | "monthly_pass"
+  | "annual_pass"
+  | "lovescope_unlock"
+  | "starscope_unlock"
+  | "forecast_monthly"
+  | "yearly_blueprint"
+  | "tip_jar";
+
+type ResolvedBirthLocation = Pick<GeocodeResult, "id" | "label" | "latitude" | "longitude" | "provider" | "timezone">;
 
 type ChartPlacementSummary = {
   body: "Sun" | "Moon" | "Rising";
@@ -128,6 +153,7 @@ type ChartPlacementSummary = {
 };
 
 const SESSION_STORAGE_KEY = "cosmoscope-access-token";
+const LOCAL_STORAGE_KEY = "cosmoscope-access-token-persistent";
 const signupSteps: SignupStep[] = ["welcome", "name", "account", "birthDate", "birthTime", "birthPlace", "review"];
 const forecastLabels: Record<ForecastTimeframe, string> = {
   daily: "Today’s Brief",
@@ -140,6 +166,19 @@ const forecastTabLabels: Record<ForecastTimeframe, string> = {
   weekly: "Week",
   monthly: "Month",
   yearly: "Year"
+};
+const forecastRequiredProductKey: Partial<Record<ForecastTimeframe, ProductKey>> = {
+  weekly: "forecast_monthly",
+  monthly: "forecast_monthly"
+};
+const productLabels: Record<ProductKey, string> = {
+  monthly_pass: "Subscription access",
+  annual_pass: "Annual access",
+  lovescope_unlock: "LoveScope",
+  starscope_unlock: "StarScope",
+  forecast_monthly: "Week + Month Unlock",
+  yearly_blueprint: "This Year",
+  tip_jar: "Support CosmoScope"
 };
 
 const placementKickers = ["Sun sign", "Moon sign", "Rising sign"] as const;
@@ -456,9 +495,11 @@ function requireResolvedBirthLocation(selectedLocation: GeocodeResult | Resolved
   }
 
   return {
+    id: selectedLocation.id,
     label: selectedLocation.label,
     latitude: selectedLocation.latitude,
     longitude: selectedLocation.longitude,
+    provider: selectedLocation.provider,
     timezone: selectedLocation.timezone
   };
 }
@@ -535,6 +576,65 @@ function parseWholeNumber(value: string) {
   return Number(trimmed);
 }
 
+function readStoredAccessToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(LOCAL_STORAGE_KEY) ?? window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+}
+
+function persistAccessToken(token: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
+  window.localStorage.setItem(LOCAL_STORAGE_KEY, token);
+}
+
+function clearStoredAccessToken() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  window.localStorage.removeItem(LOCAL_STORAGE_KEY);
+}
+
+function hasForecastAccess(timeframe: ForecastTimeframe, entitlements: EntitlementsResponse | null) {
+  if (timeframe === "daily") {
+    return true;
+  }
+
+  if (timeframe === "weekly" || timeframe === "monthly") {
+    return Boolean(entitlements?.premiumActive || entitlements?.unlocks.forecastMonthly);
+  }
+
+  return false;
+}
+
+function describeLockedForecast(timeframe: ForecastTimeframe) {
+  if (timeframe === "weekly" || timeframe === "monthly") {
+    return {
+      body: "Open the fuller timing layer for this week and month. Daily stays free.",
+      cta: "Unlock Week + Month",
+      productKey: "forecast_monthly" as ProductKey,
+      secondaryCta: "Return to Today",
+      title: "Go deeper when more context matters"
+    };
+  }
+
+  return {
+    body: "The yearly layer is being held until the forecast system can support it with the same provenance as Daily, Weekly, and Monthly.",
+    cta: "Return to Today",
+    productKey: null,
+    secondaryCta: "Unlock Week + Month",
+    secondaryProductKey: "forecast_monthly" as ProductKey,
+    title: "This Year is coming soon"
+  };
+}
+
 export function LiveExperience() {
   const [mode, setMode] = useState<Mode>("signup");
   const [signupStep, setSignupStep] = useState<SignupStep>("welcome");
@@ -561,6 +661,12 @@ export function LiveExperience() {
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isHydratingSession, setIsHydratingSession] = useState(false);
+  const [isResolvingLocation, setIsResolvingLocation] = useState(false);
+  const [isSendingResetLink, setIsSendingResetLink] = useState(false);
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [isStartingCheckout, setIsStartingCheckout] = useState<ProductKey | null>(null);
+  const [isLoadingForecast, setIsLoadingForecast] = useState<ForecastTimeframe | null>(null);
   const [showFullChart, setShowFullChart] = useState(false);
 
   const memberLabel = useMemo(() => {
@@ -578,11 +684,12 @@ export function LiveExperience() {
       return;
     }
 
-    const savedToken = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const savedToken = readStoredAccessToken();
     if (!savedToken) {
       return;
     }
 
+    setIsHydratingSession(true);
     setAccessToken(savedToken);
     setPhase("loading");
 
@@ -591,10 +698,13 @@ export function LiveExperience() {
         setPhase("member");
       })
       .catch((caught) => {
-        window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        clearStoredAccessToken();
         setAccessToken(null);
         setError(caught instanceof Error ? caught.message : "Your saved session expired. Log in again.");
         setPhase("auth");
+      })
+      .finally(() => {
+        setIsHydratingSession(false);
       });
   }, []);
 
@@ -668,7 +778,7 @@ export function LiveExperience() {
 
   function clearLocalSession(message: string | null = null) {
     if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      clearStoredAccessToken();
       clearHandledCheckoutParams();
     }
 
@@ -697,6 +807,12 @@ export function LiveExperience() {
     setError(null);
     setToolStatus(message);
     setIsDeletingAccount(false);
+    setIsHydratingSession(false);
+    setIsResolvingLocation(false);
+    setIsSendingResetLink(false);
+    setIsSubmittingAuth(false);
+    setIsStartingCheckout(null);
+    setIsLoadingForecast(null);
     setShowFullChart(false);
   }
 
@@ -718,6 +834,7 @@ export function LiveExperience() {
     setError(null);
     setToolStatus(null);
     setLocationStatus("searching");
+    setIsResolvingLocation(true);
 
     try {
       const payload = await request<{ results: GeocodeResult[] }>(API_PATHS.geocode, {
@@ -740,6 +857,8 @@ export function LiveExperience() {
       setGeocodeResults([]);
       setLocationStatus("idle");
       setError("We could not find that place yet. Try adding the state, province, or country.");
+    } finally {
+      setIsResolvingLocation(false);
     }
   }
 
@@ -755,6 +874,7 @@ export function LiveExperience() {
     }
 
     setLocationStatus("searching");
+    setIsResolvingLocation(true);
     setToolStatus("Finding your birthplace...");
 
     let payload: { results: GeocodeResult[] };
@@ -764,6 +884,7 @@ export function LiveExperience() {
         method: "POST"
       });
     } catch {
+      setIsResolvingLocation(false);
       throw new Error("We could not find that place yet. Try adding the state, province, or country.");
     }
 
@@ -784,6 +905,7 @@ export function LiveExperience() {
     setSelectedLocation(bestMatch);
     setBirthPlace(bestMatch.label);
     setToolStatus(null);
+    setIsResolvingLocation(false);
 
     return requireResolvedBirthLocation(bestMatch);
   }
@@ -859,6 +981,10 @@ export function LiveExperience() {
   }
 
   async function handleSubmit() {
+    if (isSubmittingAuth) {
+      return;
+    }
+
     setError(null);
     setToolStatus(null);
 
@@ -879,6 +1005,7 @@ export function LiveExperience() {
       return;
     }
 
+    setIsSubmittingAuth(true);
     setPhase("loading");
 
     try {
@@ -892,6 +1019,8 @@ export function LiveExperience() {
                 birthTime: normalizedBirthTime,
                 displayName: displayName.trim(),
                 email: email.trim(),
+                geocodePlaceId: resolvedBirthLocation?.id,
+                geocodeProvider: resolvedBirthLocation?.provider ?? "unknown",
                 latitude: resolvedBirthLocation?.latitude,
                 longitude: resolvedBirthLocation?.longitude,
                 password,
@@ -913,9 +1042,7 @@ export function LiveExperience() {
       }
 
       setAccessToken(token);
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
-      }
+      persistAccessToken(token);
       await hydrateMember(token, resolvedBirthLocation, normalizedBirthDate, normalizedBirthTime, unknownBirthTime);
       setPhase("member");
     } catch (caught) {
@@ -927,6 +1054,8 @@ export function LiveExperience() {
             : "Unable to log in."
       );
       setPhase("auth");
+    } finally {
+      setIsSubmittingAuth(false);
     }
   }
 
@@ -967,65 +1096,9 @@ export function LiveExperience() {
     setEntitlements(entitlementsResponse);
     setForecasts({});
 
-    const chartBirth = chartResponse.chart?.birth;
-    const chartBirthFields = chartBirth as Record<string, unknown> | undefined;
-
-    const storedBirthDate =
-      typeof chartBirthFields?.date === "string"
-        ? chartBirthFields.date
-        : typeof chartBirthFields?.birthDate === "string"
-          ? chartBirthFields.birthDate
-          : "";
-
-    const storedBirthTime =
-      typeof chartBirthFields?.time === "string"
-        ? chartBirthFields.time
-        : typeof chartBirthFields?.birthTime === "string"
-          ? chartBirthFields.birthTime
-          : "";
-
-    const storedBirthPlace = typeof chartBirthFields?.place === "string" ? chartBirthFields.place : "";
-    const storedLatitude = typeof chartBirthFields?.latitude === "number" ? chartBirthFields.latitude : null;
-    const storedLongitude = typeof chartBirthFields?.longitude === "number" ? chartBirthFields.longitude : null;
-    const storedTimezone = typeof chartBirthFields?.timezone === "string" ? chartBirthFields.timezone : "";
-    const storedUnknownBirthTime =
-      typeof chartBirthFields?.unknownBirthTime === "boolean" ? chartBirthFields.unknownBirthTime : false;
-
-    const dailyForecastPayload =
-      chartLocation && birthDateOverride && birthTimeOverride
-        ? {
-            timeframe: "daily" as const,
-            birthDate: birthDateOverride,
-            birthPlace: chartLocation.label,
-            birthTime: birthTimeOverride,
-            latitude: chartLocation.latitude,
-            longitude: chartLocation.longitude,
-            timezone: chartLocation.timezone,
-            timezoneOffset: null,
-            unknownBirthTime: unknownBirthTimeOverride
-          }
-        : storedBirthDate && storedBirthTime && storedBirthPlace && storedLatitude !== null && storedLongitude !== null && storedTimezone
-          ? {
-              timeframe: "daily" as const,
-              birthDate: storedBirthDate,
-              birthPlace: storedBirthPlace,
-              birthTime: storedBirthTime,
-              latitude: storedLatitude,
-              longitude: storedLongitude,
-              timezone: storedTimezone,
-              timezoneOffset: null,
-              unknownBirthTime: storedUnknownBirthTime
-            }
-          : null;
-
-    if (!dailyForecastPayload) {
-      setToolStatus("Your chart is open. The live daily reading needs one more refresh to load.");
-      return;
-    }
-
     try {
       const dailyForecast = await request<ForecastResponse>(API_PATHS.forecast, {
-        body: JSON.stringify(dailyForecastPayload),
+        body: JSON.stringify({ timeframe: "daily" }),
         headers: authHeaders(token),
         method: "POST"
       });
@@ -1039,12 +1112,13 @@ export function LiveExperience() {
     }
   }
 
-  async function beginCheckout(productKey: "tip_jar") {
-    if (!accessToken) {
+  async function beginCheckout(productKey: ProductKey) {
+    if (!accessToken || isStartingCheckout) {
       setError("Create or open your account before starting checkout.");
       return;
     }
 
+    setIsStartingCheckout(productKey);
     setToolStatus("Opening checkout...");
     setError(null);
     try {
@@ -1061,66 +1135,29 @@ export function LiveExperience() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Checkout could not open. Please try again in a moment.");
       setToolStatus(null);
+      setIsStartingCheckout(null);
     }
   }
 
   async function loadForecast(timeframe: ForecastTimeframe) {
-    if (!accessToken) {
+    if (!accessToken || isLoadingForecast === timeframe) {
       return;
     }
 
     setActiveForecast(timeframe);
     setError(null);
-
-    if (timeframe === "yearly") {
-      setToolStatus("This Year is coming soon.");
-      return;
-    }
-
-    const birthForForecast = chart?.chart?.birth;
-
-    if (!birthForForecast) {
-      setToolStatus("Your chart is open. This reading needs one more refresh before it can load.");
-      return;
-    }
-
-    const birthForForecastFields = birthForForecast as typeof birthForForecast & {
-      date?: string;
-      birthDate?: string;
-      time?: string;
-      birthTime?: string;
-    };
-
-    const forecastBirthDate = birthForForecastFields.date ?? birthForForecastFields.birthDate;
-    const forecastBirthTime = birthForForecastFields.time ?? birthForForecastFields.birthTime;
-
-    if (
-      !forecastBirthDate ||
-      !forecastBirthTime ||
-      !birthForForecast.place ||
-      birthForForecast.latitude === undefined ||
-      birthForForecast.longitude === undefined ||
-      !birthForForecast.timezone
-    ) {
-      setToolStatus("Your chart is open. This reading needs one more refresh before it can load.");
+    if (!hasForecastAccess(timeframe, entitlements)) {
+      const lockCopy = describeLockedForecast(timeframe);
+      setToolStatus(lockCopy.body);
       return;
     }
 
     setToolStatus(`Loading ${timeframe} reading...`);
+    setIsLoadingForecast(timeframe);
 
     try {
       const response = await request<ForecastResponse>(API_PATHS.forecast, {
-        body: JSON.stringify({
-          timeframe,
-          birthDate: forecastBirthDate,
-          birthPlace: birthForForecast.place,
-          birthTime: forecastBirthTime,
-          latitude: birthForForecast.latitude,
-          longitude: birthForForecast.longitude,
-          timezone: birthForForecast.timezone,
-          timezoneOffset: null,
-          unknownBirthTime: birthForForecast.unknownBirthTime
-        }),
+        body: JSON.stringify({ timeframe }),
         headers: authHeaders(accessToken),
         method: "POST"
       });
@@ -1129,17 +1166,24 @@ export function LiveExperience() {
       setToolStatus(null);
     } catch (caught) {
       console.warn(`${timeframe} forecast did not load.`, caught);
-      setError(null);
+      setError(caught instanceof Error ? caught.message : null);
       setToolStatus(`${forecastLabels[timeframe]} did not load. Try again in a moment.`);
+    } finally {
+      setIsLoadingForecast(null);
     }
   }
 
   async function sendResetLink() {
+    if (isSendingResetLink) {
+      return;
+    }
+
     if (!email.trim()) {
       setError("Enter your email first, then request a reset link.");
       return;
     }
 
+    setIsSendingResetLink(true);
     setToolStatus("Sending reset email...");
     setError(null);
     try {
@@ -1151,6 +1195,8 @@ export function LiveExperience() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to send reset email.");
       setToolStatus(null);
+    } finally {
+      setIsSendingResetLink(false);
     }
   }
 
@@ -1196,12 +1242,12 @@ export function LiveExperience() {
   const chartSummaryParagraphs = splitParagraphs(cleanedChartSummary);
   const isActiveSignupIntake = mode === "signup" && signupStep !== "welcome";
   const hasActiveForecastContent = Boolean(cleanedForecastContent.trim());
+  const activeForecastLocked = !hasForecastAccess(activeForecast, entitlements);
+  const activeForecastLockCopy = activeForecastLocked ? describeLockedForecast(activeForecast) : null;
   const dailyBrief = resolveTodaysBriefData({
     content: cleanedForecastContent,
     fallbackHeadline:
-      forecastParagraphs[0] ||
-      "Your Today’s Brief is loading." ||
-      "A clearer daily reading will appear here once the latest forecast finishes loading.",
+      forecastParagraphs[0] || "Your Today’s Brief is loading.",
     structuredDailyBrief: activeForecastCopy?.structuredDailyBrief ?? null
   });
   const dailyReadingParagraphs = dailyBrief.whyTodayFeelsThisWay.length ? dailyBrief.whyTodayFeelsThisWay : forecastParagraphs;
@@ -1545,7 +1591,7 @@ export function LiveExperience() {
 
             {mode === "login" ? (
               <button className="live-text-button" type="button" onClick={() => void sendResetLink()}>
-                Forgot password?
+                {isSendingResetLink ? "Sending reset link..." : "Forgot password?"}
               </button>
             ) : null}
 
@@ -1556,17 +1602,17 @@ export function LiveExperience() {
                     Back
                   </button>
                 ) : null}
-                <button className="button-primary" type="submit">
+                <button className="button-primary" disabled={isSubmittingAuth || isResolvingLocation} type="submit">
                   {signupStep === "welcome"
-                    ? "Build my CosmoScope"
+                    ? isSubmittingAuth ? "Opening..." : "Build my CosmoScope"
                     : signupStep === "review"
-                      ? "Open my CosmoScope"
-                      : "Continue"}
+                      ? isSubmittingAuth ? "Opening your CosmoScope..." : "Open my CosmoScope"
+                      : isResolvingLocation ? "Finding birthplace..." : "Continue"}
                 </button>
               </div>
             ) : (
-              <button className="button-primary" type="submit">
-                Log in and continue
+              <button className="button-primary" disabled={isSubmittingAuth || isHydratingSession} type="submit">
+                {isSubmittingAuth || isHydratingSession ? "Opening your account..." : "Log in and continue"}
               </button>
             )}
           </form>
@@ -1606,25 +1652,47 @@ export function LiveExperience() {
             </div>
           </header>
 
+          <section className="live-dashboard-intro" aria-labelledby="live-dashboard-intro-title">
+            <div>
+              <p className="reading-kicker">{formatEffectiveLabel(forecasts.daily?.effectiveDate, "daily")}</p>
+              <h1 id="live-dashboard-intro-title">Good day, {readingForName}.</h1>
+              <p>Here&apos;s what is moving now.</p>
+            </div>
+            <div className="live-dashboard-sunrise" aria-hidden="true" />
+          </section>
+
           <nav className="live-time-selector" role="tablist" aria-label="Reading time horizon">
             {forecastTabs.map((timeframe) => {
-              const isYearly = timeframe === "yearly";
+              const isLocked = !hasForecastAccess(timeframe, entitlements);
+              const isLoadingThisForecast = isLoadingForecast === timeframe;
               return (
                 <button
                   key={timeframe}
                   aria-selected={activeForecast === timeframe}
                   className={activeForecast === timeframe ? "is-active" : ""}
-                  disabled={isYearly}
                   role="tab"
                   type="button"
                   onClick={() => void loadForecast(timeframe)}
                 >
                   <span>{forecastTabLabels[timeframe]}</span>
-                  {isYearly ? <em>Coming Soon</em> : null}
+                  {isLoadingThisForecast ? <em>Loading…</em> : isLocked ? <em>{timeframe === "yearly" ? "Coming soon" : "Unlock"}</em> : null}
                 </button>
               );
             })}
           </nav>
+
+          <div className="live-period-rail" aria-label="Reading calendar">
+            {forecastTabs.map((timeframe) => (
+              <div key={`period-${timeframe}`} className={activeForecast === timeframe ? "is-active" : ""}>
+                <span>{forecastTabLabels[timeframe]}</span>
+                <strong>
+                  {!hasForecastAccess(timeframe, entitlements)
+                    ? timeframe === "yearly" ? "Coming soon" : "Unlock"
+                    : formatEffectiveLabel(forecasts[timeframe]?.effectiveDate, timeframe)}
+                </strong>
+              </div>
+            ))}
+          </div>
 
           <div className="live-dashboard-content">
             {activeForecast === "daily" ? (
@@ -1645,13 +1713,19 @@ export function LiveExperience() {
                           </ul>
                         </div>
                       ) : null}
-                      <div className="live-consider-today">
-                        <span aria-hidden="true">✶</span>
-                        <div>
-                          <p className="reading-kicker">Your move</p>
-                          <p>{dailyBrief.yourMove}</p>
+                      {dailyBrief.yourMove ? (
+                        <div className="live-consider-today">
+                          <span aria-hidden="true">✶</span>
+                          <div>
+                            <p className="reading-kicker">Your move</p>
+                            <p>{dailyBrief.yourMove}</p>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="live-reading-empty">
+                          This reading is missing its practical move, so CosmoScope will not invent one on the page.
+                        </div>
+                      )}
                       {dailyReadingParagraphs.length ? (
                         <div className="live-brief-paragraphs" aria-labelledby="why-today-title">
                           <p id="why-today-title" className="reading-kicker">Why today feels this way</p>
@@ -1666,6 +1740,15 @@ export function LiveExperience() {
                           <p>{dailyBrief.learnYourSky}</p>
                         </div>
                       ) : null}
+                      {activeForecastCopy?.audit ? (
+                        <div className="live-audit-strip" aria-label="Reading source metadata">
+                          <span>Source: {activeForecastCopy.audit.source}</span>
+                          <span>Chart: {activeForecastCopy.audit.chartSourceVersion}</span>
+                          <span>Birth record: {activeForecastCopy.audit.birthInputHash}</span>
+                          <span>Endpoint: {activeForecastCopy.audit.astrologyApiEndpoints.join(", ")}</span>
+                          <span>{activeForecastCopy.audit.fallbackUsed ? "Fallback used" : "Primary engine"}</span>
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <div className="live-reading-loading" aria-live="polite">
@@ -1675,6 +1758,46 @@ export function LiveExperience() {
                   )}
                 </div>
                 <div className="live-primary-brief-art" aria-hidden="true" />
+              </section>
+            ) : activeForecastLocked && activeForecastLockCopy ? (
+              <section className="live-horizon-reading" aria-labelledby="horizon-reading-title">
+                <div className="live-horizon-head">
+                  <div>
+                    <p className="reading-kicker">Future layer</p>
+                    <h1 id="horizon-reading-title">{activeForecastLockCopy.title}</h1>
+                  </div>
+                </div>
+                <div className="live-horizon-copy">
+                  <p>{activeForecastLockCopy.body}</p>
+                  <div className="live-intake-actions">
+                    <button
+                      className="button-primary"
+                      type="button"
+                      onClick={() => {
+                        if (activeForecastLockCopy.productKey) {
+                          void beginCheckout(activeForecastLockCopy.productKey);
+                          return;
+                        }
+                        setActiveForecast("daily");
+                      }}
+                    >
+                      {activeForecastLockCopy.cta}
+                    </button>
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => {
+                        if (activeForecastLockCopy.secondaryProductKey) {
+                          void beginCheckout(activeForecastLockCopy.secondaryProductKey);
+                          return;
+                        }
+                        setActiveForecast("daily");
+                      }}
+                    >
+                      {activeForecastLockCopy.secondaryCta}
+                    </button>
+                  </div>
+                </div>
               </section>
             ) : (
               <section className="live-horizon-reading" aria-labelledby="horizon-reading-title">
@@ -1747,7 +1870,7 @@ export function LiveExperience() {
                   If today&apos;s reading helped you feel a little more prepared for the day ahead, and you&apos;d like to support the continued development of CosmoScope, you&apos;re welcome to leave a tip.
                 </p>
                 <button className="live-tip-button" type="button" onClick={() => void beginCheckout("tip_jar")}>
-                  Leave a Tip
+                  {isStartingCheckout === "tip_jar" ? "Opening checkout..." : "Leave a Tip"}
                   <span aria-hidden="true">♡</span>
                 </button>
                 <p className="live-support-note">Your support helps keep CosmoScope independent and ad-free.</p>
@@ -1804,6 +1927,23 @@ export function LiveExperience() {
               </section>
             </div>
 
+            <nav className="live-mobile-bottom-nav" aria-label="Reading navigation">
+              {forecastTabs.map((timeframe) => {
+                return (
+                  <button
+                    key={`mobile-${timeframe}`}
+                    aria-current={activeForecast === timeframe ? "page" : undefined}
+                    type="button"
+                    onClick={() => void loadForecast(timeframe)}
+                  >
+                    <span aria-hidden="true">{timeframe === "daily" ? "☉" : timeframe === "weekly" ? "☽" : timeframe === "monthly" ? "◎" : "✧"}</span>
+                    {forecastTabLabels[timeframe]}
+                    {!hasForecastAccess(timeframe, entitlements) ? <em>{timeframe === "yearly" ? "Coming soon" : "Unlock"}</em> : null}
+                  </button>
+                );
+              })}
+            </nav>
+
             {toolStatus ? <p className="live-status-line">{toolStatus}</p> : null}
             {error ? <p className="live-error">{error}</p> : null}
             <p className="live-dashboard-close">Prepare. Don&apos;t predict.</p>
@@ -1845,6 +1985,7 @@ function describeRequestError(
   payload: { details?: { error_code?: string; msg?: string }; message?: string } | null
 ) {
   const errorCode = payload?.details?.error_code ?? "";
+  const requiredProductKey = typeof payload?.details === "object" ? (payload?.details as { requiredProductKey?: string }).requiredProductKey : undefined;
   const message = payload?.message?.trim() || payload?.details?.msg?.trim();
 
   if (errorCode === "user_already_exists") {
@@ -1857,6 +1998,10 @@ function describeRequestError(
 
   if (status === 401) {
     return "That login did not go through. Check your email and password, then try again.";
+  }
+
+  if (status === 402 && requiredProductKey && requiredProductKey in productLabels) {
+    return `${productLabels[requiredProductKey as ProductKey]} is required before this reading can open.`;
   }
 
   return message || `Request failed with ${status}`;

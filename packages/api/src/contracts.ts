@@ -53,6 +53,24 @@ export type ForecastRequest = {
   timeframe: ForecastTimeframe;
 };
 
+export type ForecastAuditMetadata = {
+  astrologyApiEndpoints: string[];
+  birthInputHash: string;
+  birthInputVersion: string;
+  cacheSchemaVersion: string;
+  chartCached: boolean;
+  chartSourceVersion: string;
+  dominantTransit: string | null;
+  fallbackUsed: boolean;
+  generatedAt: string;
+  geocodeProvider: string | null;
+  provider: string | null;
+  readingEngineVersion: string;
+  source: "astrologyapi";
+  timeframe: ForecastTimeframe;
+  transitSignalCount: number;
+};
+
 export type StudioReadRequest = {
   accessKey: string;
   audience?: StudioAudience;
@@ -140,6 +158,7 @@ export type ForecastCacheRecord = {
   timeframe: ForecastTimeframe;
   effectiveDate: string;
   content: string;
+  auditMetadata?: ForecastAuditMetadata | null;
   createdAt: string;
   refreshedAt: string;
 };

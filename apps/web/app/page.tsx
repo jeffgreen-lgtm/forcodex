@@ -1,135 +1,186 @@
 import Image from "next/image";
 
+const appHref = "/app";
+
+const methodSteps = [
+  {
+    label: "Birth chart",
+    text: "Your exact place, date, and time give CosmoScope the pattern it reads from."
+  },
+  {
+    label: "Current sky",
+    text: "Today’s movement is compared against that pattern."
+  },
+  {
+    label: "Your move",
+    text: "The result is one useful theme, moments to notice, and a practical next step."
+  }
+];
+
 export default function HomePage() {
   return (
-    <main className="solar-landing">
-      <header className="solar-landing-header" aria-label="CosmoScope">
-        <a className="solar-brand" href="/" aria-label="CosmoScope home">
-          CosmoScope
-        </a>
-        <nav className="solar-nav" aria-label="Primary navigation">
-          <a href="/app">Sign in</a>
-          <a className="solar-nav-cta" href="/app">
-            Begin
+    <main className="cosmic-landing cosmic-landing--reconstructed">
+      <section className="cosmic-opening" aria-labelledby="cosmic-hero-title">
+        <header className="cosmic-nav" aria-label="CosmoScope">
+          <a className="cosmic-brand" href="/" aria-label="CosmoScope home">
+            <span aria-hidden="true" />
+            CosmoScope
           </a>
-        </nav>
-      </header>
-
-      <section className="solar-hero-section" aria-labelledby="solar-hero-title">
-        <div className="solar-hero-copy">
-          <p className="solar-eyebrow">Your chart. Today&apos;s sky.</p>
-          <h1 id="solar-hero-title">Know what today is asking of you.</h1>
-          <p className="solar-hero-lede">
-            CosmoScope reads your birth chart against the current sky, then gives you one clear theme and one practical
-            move.
-          </p>
-          <div className="solar-action-row">
-            <a className="solar-button solar-button-primary" href="/app">
-              Build my CosmoScope
+          <nav aria-label="Primary navigation">
+            <a href="#brief">Today</a>
+            <a href="#method">Method</a>
+            <a href={appHref}>Log in</a>
+            <a className="cosmic-nav-cta" href={appHref}>
+              Begin
             </a>
-          </div>
-        </div>
+          </nav>
+        </header>
 
-        <div className="solar-hero-art" aria-hidden="true">
-          <Image
-            className="solar-eclipse-art solar-eclipse-desktop"
-            src="/art/eclipse-desktop.png"
-            alt=""
-            width={1200}
-            height={900}
-            priority
-            unoptimized
-          />
-          <Image
-            className="solar-eclipse-art solar-eclipse-mobile"
-            src="/art/eclipse-mobile.png"
-            alt=""
-            width={900}
-            height={1100}
-            priority
-            unoptimized
-          />
+        <div className="cosmic-opening-grid">
+          <div className="cosmic-hero-visual" aria-hidden="true">
+            <Image
+              className="cosmic-asset cosmic-asset--deep-space"
+              src="/art/backgrounds/deep-space.jpg"
+              alt=""
+              fill
+              unoptimized
+              priority
+              sizes="(max-width: 980px) 100vw, 62vw"
+            />
+            <Image
+              className="cosmic-asset cosmic-asset--eclipse"
+              src="/art/celestial/eclipse-gold.png"
+              alt=""
+              width={864}
+              height={552}
+              unoptimized
+              priority
+              sizes="(max-width: 980px) 88vw, 56vw"
+            />
+            <Image
+              className="cosmic-asset cosmic-asset--horizon"
+              src="/art/backgrounds/hero-earth-sunrise.jpg"
+              alt=""
+              width={1200}
+              height={690}
+              unoptimized
+              priority
+              sizes="(max-width: 980px) 100vw, 62vw"
+            />
+            <Image
+              className="cosmic-asset cosmic-asset--orbit"
+              src="/art/celestial/orbit-ring.png"
+              alt=""
+              width={344}
+              height={416}
+              unoptimized
+              sizes="(max-width: 980px) 70vw, 28vw"
+            />
+          </div>
+
+          <div className="cosmic-hero-copy">
+            <p className="cosmic-eyebrow">Today is a story</p>
+            <h1 id="cosmic-hero-title">
+              Know the day.
+              <span>Own your life.</span>
+            </h1>
+            <p>
+              CosmoScope reads your birth chart against the sky right now and gives you one clear theme,
+              one thing to notice, and one practical move.
+            </p>
+            <div className="cosmic-hero-actions">
+              <a className="cosmic-button cosmic-button-primary" href={appHref}>
+                Begin your experience
+              </a>
+              <span>Free first brief · No credit card · About 2 minutes</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="solar-reading-section" id="todays-brief" aria-labelledby="solar-reading-title">
-        <article className="solar-reading-paper">
-          <p className="solar-eyebrow">Today&apos;s Brief</p>
+      <section className="cosmic-demonstration" id="brief" aria-labelledby="cosmic-brief-title">
+        <div className="cosmic-demo-context">
+          <p className="cosmic-eyebrow">Today’s Brief</p>
+          <h2>A useful reading before the day gets loud.</h2>
+          <p>
+            The first answer comes before the explanation. You see the theme, what to notice, and the move
+            that helps you meet the day with more composure.
+          </p>
+        </div>
 
-          <div className="solar-reading-row">
-            <p className="solar-reading-label">Theme</p>
-            <div>
-              <h2 id="solar-reading-title">
-                Protect the pace
-                <span>that keeps you clear.</span>
-              </h2>
-              <p>
-                The day may reward discernment more than speed. Notice what creates urgency without creating value.
-              </p>
+        <article className="cosmic-brief-card">
+          <div className="cosmic-brief-copy">
+            <div className="cosmic-brief-header">
+              <p className="cosmic-eyebrow">Today</p>
+              <time>06:42</time>
             </div>
-          </div>
-
-          <div className="solar-reading-rule" aria-hidden="true" />
-
-          <div className="solar-reading-row">
-            <p className="solar-reading-label">Pressure</p>
+            <p className="cosmic-brief-label">Today’s Theme</p>
+            <h3 id="cosmic-brief-title">Protect the pace that keeps you clear.</h3>
             <p>
-              Urgency may arrive dressed as importance. Before you respond, separate what is truly time-sensitive from
-              what is simply loud.
+              The day may reward discernment more than speed. Notice what creates urgency without creating value.
             </p>
+            <div className="cosmic-brief-rule" aria-hidden="true" />
+            <p className="cosmic-brief-label">Notice When</p>
+            <p>Someone asks for an answer before the question has become clear.</p>
+            <div className="cosmic-brief-rule" aria-hidden="true" />
+            <p className="cosmic-brief-label">Your Move</p>
+            <p className="cosmic-brief-move">Finish what matters before avoidable noise chooses your pace.</p>
           </div>
-
-          <div className="solar-reading-rule" aria-hidden="true" />
-
-          <div className="solar-reading-row">
-            <p className="solar-reading-label">Your Move</p>
-            <p>Finish what matters before avoidable noise chooses your pace.</p>
+          <div className="cosmic-brief-orbit" aria-hidden="true">
+            <Image
+              src="/art/celestial/orbit-grid.png"
+              alt=""
+              width={384}
+              height={416}
+              unoptimized
+              sizes="(max-width: 980px) 70vw, 28vw"
+            />
+            <Image
+              src="/art/celestial/golden-star.png"
+              alt=""
+              width={360}
+              height={416}
+              unoptimized
+              sizes="(max-width: 980px) 42vw, 16vw"
+            />
           </div>
         </article>
       </section>
 
-      <section className="solar-steps-section" aria-labelledby="solar-steps-title">
-        <div>
-          <p className="solar-eyebrow">How it works</p>
-          <h2 id="solar-steps-title">Exact inputs. Current sky. Useful guidance.</h2>
+      <section className="cosmic-method" id="method" aria-labelledby="cosmic-method-title">
+        <div className="cosmic-method-heading">
+          <p className="cosmic-eyebrow">Preparation over prediction</p>
+          <h2 id="cosmic-method-title">Astrology is the engine. Daily clarity is the product.</h2>
         </div>
         <ol>
-          <li>
-            <span>01</span>
-            <strong>Birth chart</strong>
-            <p>Your place, date, and time create the base pattern.</p>
-          </li>
-          <li>
-            <span>02</span>
-            <strong>Current sky</strong>
-            <p>CosmoScope compares that chart with what is active now.</p>
-          </li>
-          <li>
-            <span>03</span>
-            <strong>Your move</strong>
-            <p>You get the clearest theme and one practical next step.</p>
-          </li>
+          {methodSteps.map((step, index) => (
+            <li key={step.label}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <strong>{step.label}</strong>
+              <p>{step.text}</p>
+            </li>
+          ))}
         </ol>
       </section>
 
-      <section className="solar-positioning" id="preparation" aria-labelledby="solar-positioning-title">
-        <p className="solar-eyebrow">Preparation over prediction</p>
-        <h2 id="solar-positioning-title">Preparation over prediction.</h2>
-        <p>
-          Astrology is the engine. Daily clarity is the product: what deserves attention, where friction may appear, and
-          how to move through it without surrendering your judgment.
-        </p>
-      </section>
-
-      <section className="solar-final-section" aria-labelledby="solar-final-title">
-        <h2 id="solar-final-title">
+      <section className="cosmic-final" aria-labelledby="cosmic-final-title">
+        <div className="cosmic-final-orbit" aria-hidden="true" />
+        <p className="cosmic-eyebrow">Your first brief is free</p>
+        <h2 id="cosmic-final-title">
           Your day.
           <span>Understood.</span>
         </h2>
-        <a className="solar-button solar-button-primary" href="/app">
-          Get Today&apos;s Brief
+        <p>Personal guidance from your chart and today’s sky.</p>
+        <a className="cosmic-button cosmic-button-primary" href={appHref}>
+          Get Today’s Brief
         </a>
       </section>
+
+      <footer className="cosmic-footer">
+        <span>CosmoScope</span>
+        <span>Preparation over prediction.</span>
+        <a href={appHref}>Log in</a>
+      </footer>
     </main>
   );
 }

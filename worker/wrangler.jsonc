@@ -8,7 +8,7 @@
     "enabled": true
   },
   "vars": {
-    "AI_READING_PROVIDER": "mock",
+    "AI_READING_PROVIDER": "none",
     "APP_ENV": "production",
     "APP_URL": "https://cosmo.greenhenncollective.com",
     "CORS_ALLOWED_ORIGINS": "https://cosmoscope.pages.dev",

@@ -8,6 +8,10 @@ export type UserProfileRow = {
   timezone_offset: number | null;
   latitude: number | null;
   longitude: number | null;
+  birth_input_hash: string | null;
+  birth_input_version: string | null;
+  geocode_provider: string | null;
+  geocode_place_id: string | null;
   unknown_birth_time: boolean;
   created_at: string;
   updated_at: string;
@@ -28,6 +32,16 @@ export type ForecastCacheRow = {
   timeframe: "daily" | "weekly" | "monthly";
   effective_date: string;
   content: string;
+  structured_brief: Record<string, unknown> | null;
+  audit_metadata: Record<string, unknown> | null;
+  engine_version: string | null;
+  provider: string | null;
+  fallback_used: boolean;
+  birth_input_hash: string | null;
+  chart_source_version: string | null;
+  astrology_sources: Record<string, unknown> | null;
+  interpretation_packet: Record<string, unknown> | null;
+  editorial_brief: Record<string, unknown> | null;
   created_at: string;
   refreshed_at: string;
 };

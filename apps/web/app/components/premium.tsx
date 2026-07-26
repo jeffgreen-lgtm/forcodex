@@ -163,6 +163,117 @@ export function PremiumMetric({ label, value }: { label: string; value: ReactNod
   );
 }
 
+export function IconButton({ children, className = "", ...props }: ElementProps<HTMLButtonElement>) {
+  return (
+    <button className={`premium-icon-button ${className}`.trim()} type="button" {...props}>
+      {children}
+    </button>
+  );
+}
+
+export function TopNavigation({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <header className={`premium-top-navigation ${className}`.trim()} {...props}>
+      {children}
+    </header>
+  );
+}
+
+export function BottomMobileNavigation({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <nav className={`premium-bottom-navigation ${className}`.trim()} {...props}>
+      {children}
+    </nav>
+  );
+}
+
+export function TodayCard({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <article className={`premium-today-card ${className}`.trim()} {...props}>
+      {children}
+    </article>
+  );
+}
+
+export function ThemeCard({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <article className={`premium-theme-card ${className}`.trim()} {...props}>
+      {children}
+    </article>
+  );
+}
+
+export function TransitCard({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <article className={`premium-transit-card ${className}`.trim()} {...props}>
+      {children}
+    </article>
+  );
+}
+
+export function InsightCard({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <article className={`premium-insight-card ${className}`.trim()} {...props}>
+      {children}
+    </article>
+  );
+}
+
+export function ThemeList({ items, className = "" }: { items: Array<{ label: string; value?: ReactNode }>; className?: string }) {
+  return (
+    <ul className={`premium-theme-list ${className}`.trim()}>
+      {items.map((item) => (
+        <li key={item.label}>
+          <span>{item.label}</span>
+          {item.value ? <strong>{item.value}</strong> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function EnergyIndicator({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="premium-energy-indicator">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+export function CosmicTimeline({ items, className = "" }: { items: Array<{ label: string; detail?: string }>; className?: string }) {
+  return (
+    <ol className={`premium-cosmic-timeline ${className}`.trim()}>
+      {items.map((item) => (
+        <li key={item.label}>
+          <strong>{item.label}</strong>
+          {item.detail ? <span>{item.detail}</span> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function PlanetaryWheel({ className = "" }: { className?: string }) {
+  return <OrbitalChart className={`premium-planetary-wheel ${className}`.trim()} />;
+}
+
+export function ReadingLayout({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <section className={`premium-reading-layout ${className}`.trim()} {...props}>
+      {children}
+    </section>
+  );
+}
+
+export function CalendarLayout({ children, className = "", ...props }: ElementProps<HTMLElement>) {
+  return (
+    <section className={`premium-calendar-layout ${className}`.trim()} {...props}>
+      {children}
+    </section>
+  );
+}
+
 export const solarCssVars = {
   "--solar-black": colors.black,
   "--solar-night": colors.night,

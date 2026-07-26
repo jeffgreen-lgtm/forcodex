@@ -39,7 +39,7 @@ export const PREMIUM_PRODUCTS: Record<string, ProductDefinition> = {
   },
   forecast_monthly: {
     key: "forecast_monthly",
-    title: "Monthly Forecast Unlock",
+    title: "Week + Month Unlock",
     kind: "one_time_unlock",
     priceLabel: "$5.99",
     iosProductId: "com.greenhenn.cosmoscope.forecast_monthly",

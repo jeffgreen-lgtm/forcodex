@@ -133,7 +133,7 @@ function parseLegacyDailyBrief(text: string, fallbackHeadline: string) {
     splitSentences(firstParagraph).find((sentence) => sentence.replace(/\*\*/g, "").trim().length > 12) ??
     fallbackHeadline;
 
-  const move = extractMoveText(text) || "Choose one practical action that makes the day easier to move through.";
+  const move = extractMoveText(text);
   const whyTodayFeelsThisWay = whyToday.length ? whyToday : paragraphs.slice(1);
 
   return {
